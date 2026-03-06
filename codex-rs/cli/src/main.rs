@@ -1119,8 +1119,19 @@ fn multitool_command(cli_name: &str) -> clap::Command {
     MultitoolCli::command()
         .bin_name(cli_name)
         .override_usage(format!(
-            "{cli_name} [OPTIONS] [PROMPT]\n       {cli_name} [OPTIONS] <COMMAND> [ARGS]"
+            "{cli_name} [OPTIONS] [PROMPT]
+       {cli_name} [OPTIONS] <COMMAND> [ARGS]"
         ))
+        .mut_subcommand("mcp", |mcp| {
+            mcp.mut_subcommand("add", |add| add.override_usage(mcp_add_usage(cli_name)))
+        })
+}
+
+fn mcp_add_usage(cli_name: &str) -> String {
+    format!(
+        "{cli_name} mcp add [OPTIONS] <NAME> --url <URL>
+       {cli_name} mcp add [OPTIONS] <NAME> -- <COMMAND>..."
+    )
 }
 
 #[cfg(test)]
@@ -1251,6 +1262,18 @@ mod tests {
         let usage = multitool_command("realmx").render_usage().to_string();
         assert!(usage.contains("realmx [OPTIONS] [PROMPT]"));
         assert!(!usage.contains("realmx-x86_64-unknown-linux-musl"));
+    }
+
+    #[test]
+    fn mcp_add_help_shows_both_dynamic_transport_forms() {
+        let err = multitool_command("realmx")
+            .try_get_matches_from(["realmx", "mcp", "add", "--help"])
+            .expect_err("help");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+        let help = err.to_string();
+        assert!(help.contains("realmx mcp add [OPTIONS] <NAME> --url <URL>"));
+        assert!(help.contains("realmx mcp add [OPTIONS] <NAME> -- <COMMAND>..."));
+        assert!(!help.contains("codex mcp add"));
     }
 
     fn app_server_from_args(args: &[&str]) -> AppServerCommand {
