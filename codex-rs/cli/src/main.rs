@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -566,13 +567,15 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+    let cli_name = display_cli_name();
+    let matches = multitool_command(&cli_name).get_matches();
     let MultitoolCli {
         print_version,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = MultitoolCli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit());
 
     if print_version {
         println!("{} {}", display_cli_name(), env!("CARGO_PKG_VERSION"));
@@ -1107,9 +1110,17 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
 }
 
 fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
     let name = display_cli_name();
+    let mut app = multitool_command(&name);
     generate(cmd.shell, &mut app, name, &mut std::io::stdout());
+}
+
+fn multitool_command(cli_name: &str) -> clap::Command {
+    MultitoolCli::command()
+        .bin_name(cli_name)
+        .override_usage(format!(
+            "{cli_name} [OPTIONS] [PROMPT]\n       {cli_name} [OPTIONS] <COMMAND> [ARGS]"
+        ))
 }
 
 #[cfg(test)]
@@ -1233,6 +1244,13 @@ mod tests {
         let help = err.to_string();
         assert!(help.contains("--with-api-key"));
         assert!(!help.contains("realmx login --with-api-key"));
+    }
+
+    #[test]
+    fn multitool_command_uses_dynamic_cli_name_in_usage() {
+        let usage = multitool_command("realmx").render_usage().to_string();
+        assert!(usage.contains("realmx [OPTIONS] [PROMPT]"));
+        assert!(!usage.contains("realmx-x86_64-unknown-linux-musl"));
     }
 
     fn app_server_from_args(args: &[&str]) -> AppServerCommand {
