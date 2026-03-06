@@ -56,7 +56,7 @@ use codex_core::features::Stage;
 use codex_core::features::is_known_feature_key;
 use codex_core::terminal::TerminalName;
 
-/// Codex CLI
+/// CLI
 ///
 /// If no subcommand is specified, options will be forwarded to the interactive CLI.
 #[derive(Debug, Parser)]
@@ -86,7 +86,7 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Run Codex non-interactively.
+    /// Run non-interactively.
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
 
@@ -99,23 +99,23 @@ enum Subcommand {
     /// Remove stored authentication credentials.
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
+    /// Manage external MCP servers.
     Mcp(McpCli),
 
-    /// Start Codex as an MCP server (stdio).
+    /// Start as an MCP server (stdio).
     McpServer,
 
     /// [experimental] Run the app server or related tooling.
     AppServer(AppServerCommand),
 
-    /// Launch the Codex desktop app (downloads the macOS installer if missing).
+    /// Launch the desktop app (downloads the macOS installer if missing).
     #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
-    /// Run commands within a Codex-provided sandbox.
+    /// Run commands within the provided sandbox.
     Sandbox(SandboxArgs),
 
     /// Debugging tools.
@@ -125,7 +125,7 @@ enum Subcommand {
     #[clap(hide = true)]
     Execpolicy(ExecpolicyCommand),
 
-    /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
+    /// Apply the latest diff produced by the agent as a `git apply` to your local working tree.
     #[clap(visible_alias = "a")]
     Apply(ApplyCommand),
 
@@ -135,7 +135,7 @@ enum Subcommand {
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
 
-    /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
+    /// [EXPERIMENTAL] Browse cloud tasks and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
 
@@ -1117,6 +1117,12 @@ fn print_completion(cmd: CompletionCommand) {
 
 fn multitool_command(cli_name: &str) -> clap::Command {
     MultitoolCli::command()
+        .about(format!("{cli_name} CLI"))
+        .long_about(format!(
+            "{cli_name} CLI
+
+If no subcommand is specified, options will be forwarded to the interactive CLI."
+        ))
         .bin_name(cli_name)
         .override_usage(format!(
             "{cli_name} [OPTIONS] [PROMPT]
@@ -1274,6 +1280,25 @@ mod tests {
         assert!(help.contains("realmx mcp add [OPTIONS] <NAME> --url <URL>"));
         assert!(help.contains("realmx mcp add [OPTIONS] <NAME> -- <COMMAND>..."));
         assert!(!help.contains("codex mcp add"));
+    }
+
+    #[test]
+    fn top_level_help_uses_dynamic_branding_without_legacy_copy() {
+        let err = multitool_command("realmx")
+            .try_get_matches_from(["realmx", "--help"])
+            .expect_err("help");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+        let help = err.to_string();
+        assert!(help.contains("realmx CLI"));
+        assert!(help.contains("Run non-interactively"));
+        assert!(help.contains("Manage external MCP servers"));
+        assert!(help.contains("Start as an MCP server (stdio)"));
+        assert!(help.contains("Run commands within the provided sandbox"));
+        assert!(help.contains("Browse cloud tasks and apply changes locally"));
+        assert!(!help.contains("Run Codex non-interactively."));
+        assert!(!help.contains("Manage external MCP servers for Codex."));
+        assert!(!help.contains("Codex-provided sandbox."));
+        assert!(!help.contains("Codex Cloud"));
     }
 
     fn app_server_from_args(args: &[&str]) -> AppServerCommand {
