@@ -8,7 +8,7 @@ For a full configuration reference, see [this documentation](https://developers.
 
 ## Connecting to MCP servers
 
-Codex can connect to MCP servers configured in `~/.codex/config.toml`. See the configuration reference for the latest MCP server options:
+Realmx can connect to MCP servers configured in `~/.codex/config.toml`. See the configuration reference for the latest MCP server options:
 
 - https://developers.openai.com/codex/config-reference
 
@@ -20,11 +20,11 @@ and are labeled as connected; others are marked as can be installed.
 
 ## Notify
 
-Codex can run a notification hook when the agent finishes a turn. See the configuration reference for the latest notification settings:
+Realmx can run a notification hook when the agent finishes a turn. See the configuration reference for the latest notification settings:
 
 - https://developers.openai.com/codex/config-reference
 
-When Codex knows which client started the turn, the legacy notify JSON payload also includes a top-level `client` field. The TUI reports `codex-tui`, and the app server reports the `clientInfo.name` value from `initialize`.
+When Realmx knows which client started the turn, the legacy notify JSON payload also includes a top-level `client` field. The TUI reports `codex-tui`, and the app server reports the `clientInfo.name` value from `initialize`.
 
 ## JSON Schema
 
@@ -32,13 +32,13 @@ The generated JSON Schema for `config.toml` lives at `codex-rs/core/config.schem
 
 ## SQLite State DB
 
-Codex stores the SQLite-backed state DB under `sqlite_home` (config key) or the
+Realmx stores the SQLite-backed state DB under `sqlite_home` (config key) or the
 `CODEX_SQLITE_HOME` environment variable. When unset, WorkspaceWrite sandbox
 sessions default to a temp directory; other modes default to `CODEX_HOME`.
 
 ## Notices
 
-Codex stores "do not show again" flags for some UI prompts under the `[notice]` table.
+Realmx stores "do not show again" flags for some UI prompts under the `[notice]` table.
 
 ## Plan mode defaults
 

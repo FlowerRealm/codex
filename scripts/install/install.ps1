@@ -72,7 +72,7 @@ function Resolve-Version {
 
     $release = Invoke-RestMethod -Uri "https://api.github.com/repos/openai/codex/releases/latest"
     if (-not $release.tag_name) {
-        Write-Error "Failed to resolve the latest Codex release version."
+        Write-Error "Failed to resolve the latest Realmx release version."
         exit 1
     }
 
@@ -85,7 +85,7 @@ if ($env:OS -ne "Windows_NT") {
 }
 
 if (-not [Environment]::Is64BitOperatingSystem) {
-    Write-Error "Codex requires a 64-bit version of Windows."
+    Write-Error "Realmx requires a 64-bit version of Windows."
     exit 1
 }
 
@@ -117,9 +117,10 @@ if ([string]::IsNullOrWhiteSpace($env:CODEX_INSTALL_DIR)) {
 }
 
 $codexPath = Join-Path $installDir "codex.exe"
-$installMode = if (Test-Path $codexPath) { "Updating" } else { "Installing" }
+$realmxPath = Join-Path $installDir "realmx.exe"
+$installMode = if ((Test-Path $codexPath) -or (Test-Path $realmxPath)) { "Updating" } else { "Installing" }
 
-Write-Step "$installMode Codex CLI"
+Write-Step "$installMode Realmx CLI"
 Write-Step "Detected platform: $platformLabel"
 
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
@@ -128,7 +129,7 @@ $resolvedVersion = Resolve-Version
 Write-Step "Resolved version: $resolvedVersion"
 $packageAsset = "realmx-npm-$npmTag-$resolvedVersion.tgz"
 
-$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("codex-install-" + [System.Guid]::NewGuid().ToString("N"))
+$tempDir = Join-Path ([System.IO.Path]::GetTempPath()) ("realmx-install-" + [System.Guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Force -Path $tempDir | Out-Null
 
 try {
@@ -136,7 +137,7 @@ try {
     $extractDir = Join-Path $tempDir "extract"
     $url = Get-ReleaseUrl -AssetName $packageAsset -ResolvedVersion $resolvedVersion
 
-    Write-Step "Downloading Codex CLI"
+    Write-Step "Downloading Realmx CLI"
     Invoke-WebRequest -Uri $url -OutFile $archivePath
 
     New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
@@ -156,6 +157,8 @@ try {
         $destinationPath = Join-Path $installDir $copyMap[$relativeSource]
         Move-Item -Force $sourcePath $destinationPath
     }
+
+    Copy-Item -Force (Join-Path $installDir "codex.exe") (Join-Path $installDir "realmx.exe")
 } finally {
     Remove-Item -Recurse -Force $tempDir -ErrorAction SilentlyContinue
 }
@@ -187,10 +190,11 @@ if (-not (Path-Contains -PathValue $userPath -Entry $installDir)) {
 }
 
 if ($pathNeedsNewShell) {
-    Write-Step ('Run now: $env:Path = "{0};$env:Path"; codex' -f $installDir)
-    Write-Step "Or open a new PowerShell window and run: codex"
+    Write-Step ('Run now: $env:Path = "{0};$env:Path"; realmx' -f $installDir)
+    Write-Step "Compatibility command also works: codex"
 } else {
-    Write-Step "Run: codex"
+    Write-Step "Run: realmx"
+    Write-Step "Compatibility command also works: codex"
 }
 
-Write-Host "Codex CLI $resolvedVersion installed successfully."
+Write-Host "Realmx CLI $resolvedVersion installed successfully."

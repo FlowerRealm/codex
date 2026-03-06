@@ -20,7 +20,7 @@ CODEX_NPM_NAME = f"{NPM_SCOPE}/{CLI_PACKAGE}"
 RESPONSES_API_PROXY_PACKAGE = f"{CLI_PACKAGE}-responses-api-proxy"
 CODEX_SDK_PACKAGE = f"{CLI_PACKAGE}-sdk"
 
-# `npm_name` is the local optional-dependency alias consumed by `bin/codex.js`.
+# `npm_name` is the local optional-dependency alias consumed by the CLI launcher.
 # The underlying package published to npm is always `@flowerrealm/realmx`.
 CODEX_PLATFORM_PACKAGES: dict[str, dict[str, str]] = {
     f"{CLI_PACKAGE}-linux-x64": {
@@ -189,7 +189,8 @@ def main() -> int:
                 print(
                     f"Staged version {version} for release in {staging_dir_str}\n\n"
                     "Verify the CLI:\n"
-                    f"    node {staging_dir_str}/bin/codex.js --version\n"
+                    f"    node {staging_dir_str}/bin/realmx.js --version\n"
+                    f"    node {staging_dir_str}/bin/realmx.js --help\n"
                     f"    node {staging_dir_str}/bin/codex.js --help\n\n"
                 )
             elif package == RESPONSES_API_PROXY_PACKAGE:
@@ -244,7 +245,9 @@ def stage_sources(staging_dir: Path, version: str, package: str) -> None:
     if package == CLI_PACKAGE:
         bin_dir = staging_dir / "bin"
         bin_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(CODEX_CLI_ROOT / "bin" / "launcher.js", bin_dir / "launcher.js")
         shutil.copy2(CODEX_CLI_ROOT / "bin" / "codex.js", bin_dir / "codex.js")
+        shutil.copy2(CODEX_CLI_ROOT / "bin" / "realmx.js", bin_dir / "realmx.js")
         rg_manifest = CODEX_CLI_ROOT / "bin" / "rg"
         if rg_manifest.exists():
             shutil.copy2(rg_manifest, bin_dir / "rg")

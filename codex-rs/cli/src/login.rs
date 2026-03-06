@@ -1,3 +1,4 @@
+use crate::branding::command_example;
 use codex_core::CodexAuth;
 use codex_core::auth::AuthCredentialsStoreMode;
 use codex_core::auth::AuthMode;
@@ -21,8 +22,9 @@ const API_KEY_LOGIN_DISABLED_MESSAGE: &str =
 const LOGIN_SUCCESS_MESSAGE: &str = "Successfully logged in";
 
 fn print_login_server_start(actual_port: u16, auth_url: &str) {
+    let device_auth_command = command_example("login --device-auth");
     eprintln!(
-        "Starting local login server on http://localhost:{actual_port}.\nIf your browser did not open, navigate to this URL to authenticate:\n\n{auth_url}\n\nOn a remote or headless machine? Use `codex login --device-auth` instead."
+        "Starting local login server on http://localhost:{actual_port}.\nIf your browser did not open, navigate to this URL to authenticate:\n\n{auth_url}\n\nOn a remote or headless machine? Use `{device_auth_command}` instead."
     );
 }
 
@@ -103,8 +105,9 @@ pub fn read_api_key_from_stdin() -> String {
     let mut stdin = std::io::stdin();
 
     if stdin.is_terminal() {
+        let login_command = command_example("login --with-api-key");
         eprintln!(
-            "--with-api-key expects the API key on stdin. Try piping it, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`."
+            "--with-api-key expects the API key on stdin. Try piping it, e.g. `printenv OPENAI_API_KEY | {login_command}`."
         );
         std::process::exit(1);
     }

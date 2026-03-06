@@ -42,7 +42,7 @@ download_file() {
     return
   fi
 
-  echo "curl or wget is required to install Codex." >&2
+  echo "curl or wget is required to install Realmx." >&2
   exit 1
 }
 
@@ -59,7 +59,7 @@ download_text() {
     return
   fi
 
-  echo "curl or wget is required to install Codex." >&2
+  echo "curl or wget is required to install Realmx." >&2
   exit 1
 }
 
@@ -91,7 +91,7 @@ add_to_path() {
   fi
 
   {
-    printf '\n# Added by Codex installer\n'
+    printf '\n# Added by Realmx installer\n'
     printf '%s\n' "$path_line"
   } >>"$profile"
   path_action="added"
@@ -106,7 +106,7 @@ release_url_for_asset() {
 
 require_command() {
   if ! command -v "$1" >/dev/null 2>&1; then
-    echo "$1 is required to install Codex." >&2
+    echo "$1 is required to install Realmx." >&2
     exit 1
   fi
 }
@@ -126,7 +126,7 @@ resolve_version() {
   resolved="$(printf '%s\n' "$release_json" | sed -n 's/.*"tag_name":[[:space:]]*"rust-v\([^"]*\)".*/\1/p' | head -n 1)"
 
   if [ -z "$resolved" ]; then
-    echo "Failed to resolve the latest Codex release version." >&2
+    echo "Failed to resolve the latest Realmx release version." >&2
     exit 1
   fi
 
@@ -187,13 +187,13 @@ else
   fi
 fi
 
-if [ -x "$INSTALL_DIR/codex" ]; then
+if [ -x "$INSTALL_DIR/realmx" ] || [ -x "$INSTALL_DIR/codex" ]; then
   install_mode="Updating"
 else
   install_mode="Installing"
 fi
 
-step "$install_mode Codex CLI"
+step "$install_mode Realmx CLI"
 step "Detected platform: $platform_label"
 
 resolved_version="$(resolve_version)"
@@ -210,7 +210,7 @@ trap cleanup EXIT INT TERM
 
 archive_path="$tmp_dir/$asset"
 
-step "Downloading Codex CLI"
+step "Downloading Realmx CLI"
 download_file "$download_url" "$archive_path"
 
 tar -xzf "$archive_path" -C "$tmp_dir"
@@ -221,24 +221,31 @@ cp "$tmp_dir/package/vendor/$vendor_target/codex/codex" "$INSTALL_DIR/codex"
 cp "$tmp_dir/package/vendor/$vendor_target/path/rg" "$INSTALL_DIR/rg"
 chmod 0755 "$INSTALL_DIR/codex"
 chmod 0755 "$INSTALL_DIR/rg"
+if ln -sf codex "$INSTALL_DIR/realmx" 2>/dev/null; then
+  :
+else
+  cp "$INSTALL_DIR/codex" "$INSTALL_DIR/realmx"
+fi
+chmod 0755 "$INSTALL_DIR/realmx"
 
 add_to_path
 
 case "$path_action" in
   added)
     step "PATH updated for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
-    step "Or open a new terminal and run: codex"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && realmx"
+    step "Compatibility command also works: codex"
     ;;
   configured)
     step "PATH is already configured for future shells in $path_profile"
-    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && codex"
-    step "Or open a new terminal and run: codex"
+    step "Run now: export PATH=\"$INSTALL_DIR:\$PATH\" && realmx"
+    step "Compatibility command also works: codex"
     ;;
   *)
     step "$INSTALL_DIR is already on PATH"
-    step "Run: codex"
+    step "Run: realmx"
+    step "Compatibility command also works: codex"
     ;;
 esac
 
-printf 'Codex CLI %s installed successfully.\n' "$resolved_version"
+printf 'Realmx CLI %s installed successfully.\n' "$resolved_version"
