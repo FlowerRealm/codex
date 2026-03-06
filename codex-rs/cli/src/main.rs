@@ -1,5 +1,6 @@
 use clap::Args;
 use clap::CommandFactory;
+use clap::FromArgMatches;
 use clap::Parser;
 use clap_complete::Shell;
 use clap_complete::generate;
@@ -10,6 +11,9 @@ use codex_chatgpt::apply_command::run_apply_command;
 use codex_cli::LandlockCommand;
 use codex_cli::SeatbeltCommand;
 use codex_cli::WindowsCommand;
+use codex_cli::branding::command_example;
+use codex_cli::branding::display_cli_name;
+use codex_cli::branding::rewrite_command_for_cli;
 use codex_cli::login::read_api_key_from_stdin;
 use codex_cli::login::run_login_status;
 use codex_cli::login::run_login_with_api_key;
@@ -52,22 +56,21 @@ use codex_core::features::Stage;
 use codex_core::features::is_known_feature_key;
 use codex_core::terminal::TerminalName;
 
-/// Codex CLI
+/// CLI
 ///
 /// If no subcommand is specified, options will be forwarded to the interactive CLI.
 #[derive(Debug, Parser)]
 #[clap(
     author,
     version,
+    disable_version_flag = true,
     // If a sub‑command is given, ignore requirements of the default args.
-    subcommand_negates_reqs = true,
-    // The executable is sometimes invoked via a platform‑specific name like
-    // `codex-x86_64-unknown-linux-musl`, but the help output should always use
-    // the generic `codex` command name that users run.
-    bin_name = "codex",
-    override_usage = "codex [OPTIONS] [PROMPT]\n       codex [OPTIONS] <COMMAND> [ARGS]"
+    subcommand_negates_reqs = true
 )]
 struct MultitoolCli {
+    #[arg(short = 'V', long = "version", action = clap::ArgAction::SetTrue, global = true)]
+    print_version: bool,
+
     #[clap(flatten)]
     pub config_overrides: CliConfigOverrides,
 
@@ -83,7 +86,7 @@ struct MultitoolCli {
 
 #[derive(Debug, clap::Subcommand)]
 enum Subcommand {
-    /// Run Codex non-interactively.
+    /// Run non-interactively.
     #[clap(visible_alias = "e")]
     Exec(ExecCli),
 
@@ -96,23 +99,23 @@ enum Subcommand {
     /// Remove stored authentication credentials.
     Logout(LogoutCommand),
 
-    /// Manage external MCP servers for Codex.
+    /// Manage external MCP servers.
     Mcp(McpCli),
 
-    /// Start Codex as an MCP server (stdio).
+    /// Start as an MCP server (stdio).
     McpServer,
 
     /// [experimental] Run the app server or related tooling.
     AppServer(AppServerCommand),
 
-    /// Launch the Codex desktop app (downloads the macOS installer if missing).
+    /// Launch the desktop app (downloads the macOS installer if missing).
     #[cfg(target_os = "macos")]
     App(app_cmd::AppCommand),
 
     /// Generate shell completion scripts.
     Completion(CompletionCommand),
 
-    /// Run commands within a Codex-provided sandbox.
+    /// Run commands within the provided sandbox.
     Sandbox(SandboxArgs),
 
     /// Debugging tools.
@@ -122,7 +125,7 @@ enum Subcommand {
     #[clap(hide = true)]
     Execpolicy(ExecpolicyCommand),
 
-    /// Apply the latest diff produced by Codex agent as a `git apply` to your local working tree.
+    /// Apply the latest diff produced by the agent as a `git apply` to your local working tree.
     #[clap(visible_alias = "a")]
     Apply(ApplyCommand),
 
@@ -132,7 +135,7 @@ enum Subcommand {
     /// Fork a previous interactive session (picker by default; use --last to fork the most recent).
     Fork(ForkCommand),
 
-    /// [EXPERIMENTAL] Browse tasks from Codex Cloud and apply changes locally.
+    /// [EXPERIMENTAL] Browse cloud tasks and apply changes locally.
     #[clap(name = "cloud", alias = "cloud-tasks")]
     Cloud(CloudTasksCli),
 
@@ -267,7 +270,7 @@ struct LoginCommand {
 
     #[arg(
         long = "with-api-key",
-        help = "Read the API key from stdin (e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`)"
+        help = "Read the API key from stdin by piping it to this command"
     )]
     with_api_key: bool,
 
@@ -383,7 +386,11 @@ struct StdioToUdsCommand {
     socket_path: PathBuf,
 }
 
-fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<String> {
+fn format_exit_messages(
+    exit_info: AppExitInfo,
+    color_enabled: bool,
+    cli_name: &str,
+) -> Vec<String> {
     let AppExitInfo {
         token_usage,
         thread_id: conversation_id,
@@ -403,6 +410,7 @@ fn format_exit_messages(exit_info: AppExitInfo, color_enabled: bool) -> Vec<Stri
     if let Some(resume_cmd) =
         codex_core::util::resume_command(thread_name.as_deref(), conversation_id)
     {
+        let resume_cmd = rewrite_command_for_cli(&resume_cmd, cli_name);
         let command = if color_enabled {
             resume_cmd.cyan().to_string()
         } else {
@@ -426,7 +434,8 @@ fn handle_app_exit(exit_info: AppExitInfo) -> anyhow::Result<()> {
 
     let update_action = exit_info.update_action;
     let color_enabled = supports_color::on(Stream::Stdout).is_some();
-    for line in format_exit_messages(exit_info, color_enabled) {
+    let cli_name = display_cli_name();
+    for line in format_exit_messages(exit_info, color_enabled, &cli_name) {
         println!("{line}");
     }
     if let Some(action) = update_action {
@@ -558,12 +567,20 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
+    let cli_name = display_cli_name();
+    let matches = multitool_command(&cli_name).get_matches();
     let MultitoolCli {
+        print_version,
         config_overrides: mut root_config_overrides,
         feature_toggles,
         mut interactive,
         subcommand,
-    } = MultitoolCli::parse();
+    } = MultitoolCli::from_arg_matches(&matches).unwrap_or_else(|err| err.exit());
+
+    if print_version {
+        println!("{} {}", display_cli_name(), env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
 
     // Fold --enable/--disable into config overrides so they flow to all subcommands.
     let toggle_overrides = feature_toggles.to_overrides()?;
@@ -586,7 +603,7 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
             codex_exec::run_main(exec_cli, arg0_paths.clone()).await?;
         }
         Some(Subcommand::Review(review_args)) => {
-            let mut exec_cli = ExecCli::try_parse_from(["codex", "exec"])?;
+            let mut exec_cli = ExecCli::try_parse_from([cli_name.as_str(), "exec"])?;
             exec_cli.command = Some(ExecCommand::Review(review_args));
             prepend_config_flags(
                 &mut exec_cli.config_overrides,
@@ -688,8 +705,9 @@ async fn cli_main(arg0_paths: Arg0DispatchPaths) -> anyhow::Result<()> {
                         )
                         .await;
                     } else if login_cli.api_key.is_some() {
+                        let login_command = command_example("login --with-api-key");
                         eprintln!(
-                            "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | codex login --with-api-key`."
+                            "The --api-key flag is no longer supported. Pipe the key instead, e.g. `printenv OPENAI_API_KEY | {login_command}`."
                         );
                         std::process::exit(1);
                     } else if login_cli.with_api_key {
@@ -1092,9 +1110,34 @@ fn merge_interactive_cli_flags(interactive: &mut TuiCli, subcommand_cli: TuiCli)
 }
 
 fn print_completion(cmd: CompletionCommand) {
-    let mut app = MultitoolCli::command();
-    let name = "codex";
+    let name = display_cli_name();
+    let mut app = multitool_command(&name);
     generate(cmd.shell, &mut app, name, &mut std::io::stdout());
+}
+
+fn multitool_command(cli_name: &str) -> clap::Command {
+    MultitoolCli::command()
+        .about(format!("{cli_name} CLI"))
+        .long_about(format!(
+            "{cli_name} CLI
+
+If no subcommand is specified, options will be forwarded to the interactive CLI."
+        ))
+        .bin_name(cli_name)
+        .override_usage(format!(
+            "{cli_name} [OPTIONS] [PROMPT]
+       {cli_name} [OPTIONS] <COMMAND> [ARGS]"
+        ))
+        .mut_subcommand("mcp", |mcp| {
+            mcp.mut_subcommand("add", |add| add.override_usage(mcp_add_usage(cli_name)))
+        })
+}
+
+fn mcp_add_usage(cli_name: &str) -> String {
+    format!(
+        "{cli_name} mcp add [OPTIONS] <NAME> --url <URL>
+       {cli_name} mcp add [OPTIONS] <NAME> -- <COMMAND>..."
+    )
 }
 
 #[cfg(test)]
@@ -1108,6 +1151,7 @@ mod tests {
     fn finalize_resume_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            print_version: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,
@@ -1137,6 +1181,7 @@ mod tests {
     fn finalize_fork_from_args(args: &[&str]) -> TuiCli {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let MultitoolCli {
+            print_version: _,
             interactive,
             config_overrides: root_overrides,
             subcommand,
@@ -1202,6 +1247,60 @@ mod tests {
         assert_eq!(args.prompt.as_deref(), Some("re-review"));
     }
 
+    #[test]
+    fn version_flag_parses_without_subcommand() {
+        let cli = MultitoolCli::try_parse_from(["codex", "--version"]).expect("parse");
+        assert!(cli.print_version);
+        assert!(cli.subcommand.is_none());
+    }
+
+    #[test]
+    fn login_help_does_not_hardcode_primary_cli_name() {
+        let err = MultitoolCli::try_parse_from(["codex", "login", "--help"]).expect_err("help");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+        let help = err.to_string();
+        assert!(help.contains("--with-api-key"));
+        assert!(!help.contains("realmx login --with-api-key"));
+    }
+
+    #[test]
+    fn multitool_command_uses_dynamic_cli_name_in_usage() {
+        let usage = multitool_command("realmx").render_usage().to_string();
+        assert!(usage.contains("realmx [OPTIONS] [PROMPT]"));
+        assert!(!usage.contains("realmx-x86_64-unknown-linux-musl"));
+    }
+
+    #[test]
+    fn mcp_add_help_shows_both_dynamic_transport_forms() {
+        let err = multitool_command("realmx")
+            .try_get_matches_from(["realmx", "mcp", "add", "--help"])
+            .expect_err("help");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+        let help = err.to_string();
+        assert!(help.contains("realmx mcp add [OPTIONS] <NAME> --url <URL>"));
+        assert!(help.contains("realmx mcp add [OPTIONS] <NAME> -- <COMMAND>..."));
+        assert!(!help.contains("codex mcp add"));
+    }
+
+    #[test]
+    fn top_level_help_uses_dynamic_branding_without_legacy_copy() {
+        let err = multitool_command("realmx")
+            .try_get_matches_from(["realmx", "--help"])
+            .expect_err("help");
+        assert_eq!(err.kind(), clap::error::ErrorKind::DisplayHelp);
+        let help = err.to_string();
+        assert!(help.contains("realmx CLI"));
+        assert!(help.contains("Run non-interactively"));
+        assert!(help.contains("Manage external MCP servers"));
+        assert!(help.contains("Start as an MCP server (stdio)"));
+        assert!(help.contains("Run commands within the provided sandbox"));
+        assert!(help.contains("Browse cloud tasks and apply changes locally"));
+        assert!(!help.contains("Run Codex non-interactively."));
+        assert!(!help.contains("Manage external MCP servers for Codex."));
+        assert!(!help.contains("Codex-provided sandbox."));
+        assert!(!help.contains("Codex Cloud"));
+    }
+
     fn app_server_from_args(args: &[&str]) -> AppServerCommand {
         let cli = MultitoolCli::try_parse_from(args).expect("parse");
         let Subcommand::AppServer(app_server) = cli.subcommand.expect("app-server present") else {
@@ -1236,14 +1335,14 @@ mod tests {
             update_action: None,
             exit_reason: ExitReason::UserRequested,
         };
-        let lines = format_exit_messages(exit_info, false);
+        let lines = format_exit_messages(exit_info, false, "codex");
         assert!(lines.is_empty());
     }
 
     #[test]
     fn format_exit_messages_includes_resume_hint_without_color() {
         let exit_info = sample_exit_info(Some("123e4567-e89b-12d3-a456-426614174000"), None);
-        let lines = format_exit_messages(exit_info, false);
+        let lines = format_exit_messages(exit_info, false, "codex");
         assert_eq!(
             lines,
             vec![
@@ -1257,7 +1356,7 @@ mod tests {
     #[test]
     fn format_exit_messages_applies_color_when_enabled() {
         let exit_info = sample_exit_info(Some("123e4567-e89b-12d3-a456-426614174000"), None);
-        let lines = format_exit_messages(exit_info, true);
+        let lines = format_exit_messages(exit_info, true, "codex");
         assert_eq!(lines.len(), 2);
         assert!(lines[1].contains("\u{1b}[36m"));
     }
@@ -1268,12 +1367,26 @@ mod tests {
             Some("123e4567-e89b-12d3-a456-426614174000"),
             Some("my-thread"),
         );
-        let lines = format_exit_messages(exit_info, false);
+        let lines = format_exit_messages(exit_info, false, "codex");
         assert_eq!(
             lines,
             vec![
                 "Token usage: total=2 input=0 output=2".to_string(),
                 "To continue this session, run codex resume my-thread".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn format_exit_messages_uses_primary_cli_name_when_requested() {
+        let exit_info = sample_exit_info(Some("123e4567-e89b-12d3-a456-426614174000"), None);
+        let lines = format_exit_messages(exit_info, false, "realmx");
+        assert_eq!(
+            lines,
+            vec![
+                "Token usage: total=2 input=0 output=2".to_string(),
+                "To continue this session, run realmx resume 123e4567-e89b-12d3-a456-426614174000"
+                    .to_string(),
             ]
         );
     }

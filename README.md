@@ -1,18 +1,18 @@
 <p align="center"><code>npm i -g @flowerrealm/realmx</code><br />or <code>brew install --cask codex</code></p>
-<p align="center"><strong>Codex CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
+<p align="center"><strong>Realmx CLI</strong> is a coding agent from OpenAI that runs locally on your computer.
 <p align="center">
-  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Codex CLI splash" width="80%" />
+  <img src="https://github.com/openai/codex/blob/main/.github/codex-cli-splash.png" alt="Realmx CLI splash" width="80%" />
 </p>
 </br>
-If you want Codex in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
-</br>If you want the desktop app experience, run <code>codex app</code> or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
+If you want Realmx in your code editor (VS Code, Cursor, Windsurf), <a href="https://developers.openai.com/codex/ide">install in your IDE.</a>
+</br>If you want the desktop app experience, run <code>realmx app</code> (or <code>codex app</code> for compatibility) or visit <a href="https://chatgpt.com/codex?app-landing-page=true">the Codex App page</a>.
 </br>If you are looking for the <em>cloud-based agent</em> from OpenAI, <strong>Codex Web</strong>, go to <a href="https://chatgpt.com/codex">chatgpt.com/codex</a>.</p>
 
 ---
 
 ## Quickstart
 
-### Installing and running Codex CLI
+### Installing and running Realmx CLI
 
 Install globally with your preferred package manager:
 
@@ -26,7 +26,10 @@ npm install -g @flowerrealm/realmx
 brew install --cask codex
 ```
 
-Then simply run `codex` to get started.
+Then run the command that matches how you installed it:
+
+- `npm install -g @flowerrealm/realmx`: run `realmx` (the legacy `codex` command also works)
+- `brew install --cask codex`: run `codex`
 
 <details>
 <summary>You can also go to the <a href="https://github.com/openai/codex/releases/latest">latest GitHub Release</a> and download the appropriate binary for your platform.</summary>
@@ -40,19 +43,19 @@ Each GitHub Release contains many executables, but in practice, you likely want 
   - x86_64: `codex-x86_64-unknown-linux-musl.tar.gz`
   - arm64: `codex-aarch64-unknown-linux-musl.tar.gz`
 
-Each archive contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you likely want to rename it to `codex` after extracting it.
+Each archive currently contains a single entry with the platform baked into the name (e.g., `codex-x86_64-unknown-linux-musl`), so you will likely want to rename it to `realmx` after extracting it. If you have existing automation, keeping the legacy `codex` name also works.
 
 </details>
 
-### Using Codex with your ChatGPT plan
+### Using Realmx with your ChatGPT plan
 
-Run `codex` and select **Sign in with ChatGPT**. We recommend signing into your ChatGPT account to use Codex as part of your Plus, Pro, Team, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
+Run `realmx` and select **Sign in with ChatGPT**. The legacy `codex` command also works. We recommend signing into your ChatGPT account to use Realmx as part of your Plus, Pro, Team, Edu, or Enterprise plan. [Learn more about what's included in your ChatGPT plan](https://help.openai.com/en/articles/11369540-codex-in-chatgpt).
 
-You can also use Codex with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
+You can also use Realmx with an API key, but this requires [additional setup](https://developers.openai.com/codex/auth#sign-in-with-an-api-key).
 
 ## Docs
 
-- [**Codex Documentation**](https://developers.openai.com/codex)
+- [**Realmx Documentation**](https://developers.openai.com/codex)
 - [**Contributing**](./docs/contributing.md)
 - [**Installing & building**](./docs/install.md)
 - [**Open source fund**](./docs/open-source-fund.md)

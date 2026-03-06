@@ -42,6 +42,8 @@ export type CodexExecArgs = {
 const INTERNAL_ORIGINATOR_ENV = "CODEX_INTERNAL_ORIGINATOR_OVERRIDE";
 const TYPESCRIPT_SDK_ORIGINATOR = "codex_sdk_ts";
 const CODEX_NPM_NAME = "@flowerrealm/realmx";
+const CLI_NAME_ENV = "CODEX_CLI_NAME";
+const PRIMARY_CLI_NAME = "realmx";
 
 const PLATFORM_PACKAGE_BY_TARGET: Record<string, string> = {
   "x86_64-unknown-linux-musl": `${CODEX_NPM_NAME}-linux-x64`,
@@ -58,13 +60,15 @@ export class CodexExec {
   private executablePath: string;
   private envOverride?: Record<string, string>;
   private configOverrides?: CodexConfigObject;
+  private useBundledCliBranding: boolean;
 
   constructor(
     executablePath: string | null = null,
     env?: Record<string, string>,
     configOverrides?: CodexConfigObject,
   ) {
-    this.executablePath = executablePath || findCodexPath();
+    this.useBundledCliBranding = executablePath === null;
+    this.executablePath = executablePath ?? findCodexPath();
     this.envOverride = env;
     this.configOverrides = configOverrides;
   }
@@ -150,6 +154,9 @@ export class CodexExec {
     if (!env[INTERNAL_ORIGINATOR_ENV]) {
       env[INTERNAL_ORIGINATOR_ENV] = TYPESCRIPT_SDK_ORIGINATOR;
     }
+    if (this.useBundledCliBranding && !env[CLI_NAME_ENV]) {
+      env[CLI_NAME_ENV] = PRIMARY_CLI_NAME;
+    }
     if (args.baseUrl) {
       env.OPENAI_BASE_URL = args.baseUrl;
     }
@@ -160,6 +167,7 @@ export class CodexExec {
     const child = spawn(this.executablePath, commandArgs, {
       env,
       signal: args.signal,
+      argv0: this.useBundledCliBranding ? env[CLI_NAME_ENV] : undefined,
     });
 
     let spawnError: unknown | null = null;
@@ -373,7 +381,7 @@ function findCodexPath() {
     vendorRoot = path.join(path.dirname(platformPackageJsonPath), "vendor");
   } catch {
     throw new Error(
-      `Unable to locate Codex CLI binaries. Ensure ${CODEX_NPM_NAME} is installed with optional dependencies.`,
+      `Unable to locate Realmx CLI binaries. Ensure ${CODEX_NPM_NAME} is installed with optional dependencies.`,
     );
   }
 

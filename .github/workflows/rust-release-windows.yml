@@ -163,6 +163,7 @@ jobs:
           mkdir -p "$dest"
 
           cp target/${{ matrix.target }}/release/codex.exe "$dest/codex-${{ matrix.target }}.exe"
+          cp target/${{ matrix.target }}/release/codex.exe "$dest/realmx-${{ matrix.target }}.exe"
           cp target/${{ matrix.target }}/release/codex-responses-api-proxy.exe "$dest/codex-responses-api-proxy-${{ matrix.target }}.exe"
           cp target/${{ matrix.target }}/release/codex-windows-sandbox-setup.exe "$dest/codex-windows-sandbox-setup-${{ matrix.target }}.exe"
           cp target/${{ matrix.target }}/release/codex-command-runner.exe "$dest/codex-command-runner-${{ matrix.target }}.exe"
@@ -198,7 +199,7 @@ jobs:
             # Create zip archive for Windows binaries.
             # Must run from inside the dest dir so 7z won't embed the
             # directory path inside the zip.
-            if [[ "$base" == "codex-${{ matrix.target }}.exe" ]]; then
+            if [[ "$base" == "codex-${{ matrix.target }}.exe" || "$base" == "realmx-${{ matrix.target }}.exe" ]]; then
               # Bundle the sandbox helper binaries into the main codex zip so
               # WinGet installs include the required helpers next to codex.exe.
               # Fall back to the single-binary zip if the helpers are missing
