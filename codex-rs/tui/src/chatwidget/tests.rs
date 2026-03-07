@@ -1927,6 +1927,28 @@ async fn dropping_chatwidget_aborts_su8_usage_poller() {
 }
 
 #[tokio::test]
+async fn su8_usage_poller_only_sends_one_immediate_snapshot() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = "su8".to_string();
+
+    chat.prefetch_su8_usage();
+
+    let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
+        .await
+        .expect("expected one immediate su8 usage event")
+        .expect("channel should stay open");
+    assert!(matches!(event, AppEvent::Su8UsageSnapshotFetched(None)));
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), rx.recv())
+            .await
+            .is_err(),
+        "su8 poller should wait for the interval before sending another snapshot"
+    );
+
+    chat.stop_su8_usage_poller();
+}
+
+#[tokio::test]
 async fn worked_elapsed_from_resets_when_timer_restarts() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     assert_eq!(chat.worked_elapsed_from(5), 5);
@@ -9449,6 +9471,31 @@ async fn su8_status_line_today_used_clamps_at_zero() {
     assert_eq!(
         chat.status_line_value_for_item(&StatusLineItem::Su8TodayUsed),
         Some("today 0.00 USD".to_string())
+    );
+}
+
+#[tokio::test]
+async fn su8_usage_request_normalizes_trailing_slash() {
+    let provider = codex_core::ModelProviderInfo {
+        name: "SU8".to_string(),
+        base_url: Some("https://example.test/v1/".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: codex_core::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    assert_eq!(
+        su8_usage_url(&provider),
+        Some("https://example.test/v1/usage".to_string())
     );
 }
 

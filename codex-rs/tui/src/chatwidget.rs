@@ -5649,10 +5649,10 @@ impl ChatWidget {
             let mut interval = tokio::time::interval(Duration::from_secs(60));
 
             loop {
+                interval.tick().await;
                 let auth = auth_manager.auth().await;
                 let snapshot = fetch_su8_usage_snapshot(provider.clone(), auth).await;
                 app_event_tx.send(AppEvent::Su8UsageSnapshotFetched(snapshot));
-                interval.tick().await;
             }
         });
 
@@ -8852,6 +8852,7 @@ fn su8_usage_url(provider: &codex_core::ModelProviderInfo) -> Option<String> {
     let mut url = url::Url::parse(&base_url).ok()?;
     {
         let mut segments = url.path_segments_mut().ok()?;
+        segments.pop_if_empty();
         segments.push("usage");
     }
     if let Some(query_params) = &provider.query_params {
