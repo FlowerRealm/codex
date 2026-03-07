@@ -559,14 +559,25 @@ jobs:
           for tarball in "${tarballs[@]}"; do
             filename="$(basename "${tarball}")"
             tag=""
+            package_name=""
 
             case "${filename}" in
               realmx-npm-linux-*-"${VERSION}".tgz|realmx-npm-darwin-*-"${VERSION}".tgz|realmx-npm-win32-*-"${VERSION}".tgz)
                 platform="${filename#realmx-npm-}"
                 platform="${platform%-${VERSION}.tgz}"
+                package_name='@flowerrealm/realmx'
                 tag="${prefix}${platform}"
                 ;;
-              realmx-npm-"${VERSION}".tgz|realmx-responses-api-proxy-npm-"${VERSION}".tgz|realmx-sdk-npm-"${VERSION}".tgz)
+              realmx-npm-"${VERSION}".tgz)
+                package_name='@flowerrealm/realmx'
+                tag="${NPM_TAG}"
+                ;;
+              realmx-responses-api-proxy-npm-"${VERSION}".tgz)
+                package_name='@flowerrealm/realmx-responses-api-proxy'
+                tag="${NPM_TAG}"
+                ;;
+              realmx-sdk-npm-"${VERSION}".tgz)
+                package_name='@flowerrealm/realmx-sdk'
                 tag="${NPM_TAG}"
                 ;;
               *)
@@ -574,6 +585,13 @@ jobs:
                 exit 1
                 ;;
             esac
+
+            if ! npm view "${package_name}" version >/dev/null 2>&1; then
+              if [[ "${package_name}" != '@flowerrealm/realmx' ]]; then
+                echo "::warning title=Skipping first publish for ${package_name}::Package does not exist on npm yet. Bootstrap it once manually, then publish a later version automatically."
+                continue
+              fi
+            fi
 
             publish_cmd=(npm publish --access public "${GITHUB_WORKSPACE}/${tarball}")
             if [[ -n "${tag}" ]]; then

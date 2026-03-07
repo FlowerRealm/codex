@@ -534,7 +534,22 @@ jobs:
           name: realmx-shell-tool-mcp-npm
           path: dist/npm
 
+      - name: Check npm package bootstrap
+        id: npm_package_check
+        env:
+          PACKAGE_NAME: '@flowerrealm/realmx-shell-tool-mcp'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if npm view "${PACKAGE_NAME}" version >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::warning title=Skipping first publish for ${PACKAGE_NAME}::Package does not exist on npm yet. Bootstrap it once manually, then rerun release automation."
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Publish to npm
+        if: ${{ steps.npm_package_check.outputs.exists == 'true' }}
         env:
           NPM_TAG: ${{ needs.metadata.outputs.npm_tag }}
           VERSION: ${{ needs.metadata.outputs.version }}
