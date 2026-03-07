@@ -8644,6 +8644,7 @@ impl Drop for ChatWidget {
     fn drop(&mut self) {
         self.reset_realtime_conversation_state();
         self.stop_rate_limit_poller();
+        self.stop_su8_usage_poller();
     }
 }
 
@@ -8838,40 +8839,88 @@ struct Su8UsageResponse {
     today_remaining: Option<f64>,
 }
 
-async fn fetch_su8_usage_snapshot(
-    provider: codex_core::ModelProviderInfo,
-    auth: Option<CodexAuth>,
-) -> Option<Su8UsageSnapshot> {
-    let base_url = provider.base_url.clone()?.trim_end_matches('/').to_string();
-    let client = build_reqwest_client();
-    let mut request = client.get(format!("{base_url}/usage"));
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Su8UsageRequestConfig {
+    url: String,
+    headers: Vec<(String, String)>,
+    bearer_token: Option<String>,
+    account_id: Option<String>,
+}
 
-    if let Some(api_key) = provider.api_key().ok().flatten() {
-        request = request.bearer_auth(api_key);
-    } else if let Some(token) = provider.experimental_bearer_token.clone() {
-        request = request.bearer_auth(token);
-    } else if let Some(auth) = auth {
-        if let Ok(token) = auth.get_token() {
-            request = request.bearer_auth(token);
-        }
-        if let Some(account_id) = auth.get_account_id() {
-            request = request.header("ChatGPT-Account-ID", account_id);
+fn su8_usage_url(provider: &codex_core::ModelProviderInfo) -> Option<String> {
+    let base_url = provider.base_url.clone()?;
+    let mut url = url::Url::parse(&base_url).ok()?;
+    {
+        let mut segments = url.path_segments_mut().ok()?;
+        segments.push("usage");
+    }
+    if let Some(query_params) = &provider.query_params {
+        let mut pairs = url.query_pairs_mut();
+        for (key, value) in query_params {
+            pairs.append_pair(key, value);
         }
     }
+    Some(url.to_string())
+}
 
-    if let Some(headers) = &provider.http_headers {
-        for (name, value) in headers {
-            request = request.header(name, value);
-        }
+fn su8_usage_request_config(
+    provider: &codex_core::ModelProviderInfo,
+    auth: Option<&CodexAuth>,
+) -> Option<Su8UsageRequestConfig> {
+    let url = su8_usage_url(provider)?;
+    let mut headers = Vec::new();
+    if let Some(static_headers) = &provider.http_headers {
+        headers.extend(
+            static_headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.clone())),
+        );
     }
     if let Some(env_headers) = &provider.env_http_headers {
         for (name, env_var) in env_headers {
             if let Ok(value) = std::env::var(env_var)
                 && !value.trim().is_empty()
             {
-                request = request.header(name, value);
+                headers.push((name.clone(), value));
             }
         }
+    }
+
+    let (bearer_token, account_id) = if let Some(api_key) = provider.api_key().ok()? {
+        (Some(api_key), None)
+    } else if let Some(token) = provider.experimental_bearer_token.clone() {
+        (Some(token), None)
+    } else if let Some(auth) = auth {
+        let token = auth.get_token().ok()?;
+        (Some(token), auth.get_account_id())
+    } else {
+        (None, None)
+    };
+
+    Some(Su8UsageRequestConfig {
+        url,
+        headers,
+        bearer_token,
+        account_id,
+    })
+}
+
+async fn fetch_su8_usage_snapshot(
+    provider: codex_core::ModelProviderInfo,
+    auth: Option<CodexAuth>,
+) -> Option<Su8UsageSnapshot> {
+    let request_config = su8_usage_request_config(&provider, auth.as_ref())?;
+    let client = build_reqwest_client();
+    let mut request = client.get(request_config.url);
+
+    if let Some(bearer_token) = request_config.bearer_token {
+        request = request.bearer_auth(bearer_token);
+    }
+    if let Some(account_id) = request_config.account_id {
+        request = request.header("ChatGPT-Account-ID", account_id);
+    }
+    for (name, value) in request_config.headers {
+        request = request.header(name, value);
     }
 
     let response = request.send().await.ok()?;

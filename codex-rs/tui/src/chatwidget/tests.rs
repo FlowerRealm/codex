@@ -1908,6 +1908,25 @@ async fn prefetch_rate_limits_is_gated_on_chatgpt_auth_provider() {
 }
 
 #[tokio::test]
+async fn dropping_chatwidget_aborts_su8_usage_poller() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = "su8".to_string();
+    chat.config.model_provider.base_url = Some("https://example.test/v1".to_string());
+
+    chat.prefetch_su8_usage();
+    let abort_handle = chat
+        .su8_usage_poller
+        .as_ref()
+        .expect("su8 poller should start for su8 providers")
+        .abort_handle();
+
+    drop(chat);
+
+    tokio::task::yield_now().await;
+    assert!(abort_handle.is_finished());
+}
+
+#[tokio::test]
 async fn worked_elapsed_from_resets_when_timer_restarts() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     assert_eq!(chat.worked_elapsed_from(5), 5);
@@ -9431,6 +9450,57 @@ async fn su8_status_line_today_used_clamps_at_zero() {
         chat.status_line_value_for_item(&StatusLineItem::Su8TodayUsed),
         Some("today 0.00 USD".to_string())
     );
+}
+
+#[tokio::test]
+async fn su8_usage_request_preserves_query_params() {
+    let provider = codex_core::ModelProviderInfo {
+        name: "SU8".to_string(),
+        base_url: Some("https://example.test/v1".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: codex_core::WireApi::Responses,
+        query_params: Some(HashMap::from([(
+            "api-version".to_string(),
+            "2025-04-01-preview".to_string(),
+        )])),
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    assert_eq!(
+        su8_usage_url(&provider),
+        Some("https://example.test/v1/usage?api-version=2025-04-01-preview".to_string())
+    );
+}
+
+#[tokio::test]
+async fn su8_usage_request_config_drops_chatgpt_fallback_when_env_key_missing() {
+    let provider = codex_core::ModelProviderInfo {
+        name: "SU8".to_string(),
+        base_url: Some("https://example.test/v1".to_string()),
+        env_key: Some("MISSING_SU8_API_KEY".to_string()),
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: codex_core::WireApi::Responses,
+        query_params: None,
+        http_headers: None,
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
+
+    assert_eq!(su8_usage_request_config(&provider, Some(&auth)), None);
 }
 
 #[tokio::test]
