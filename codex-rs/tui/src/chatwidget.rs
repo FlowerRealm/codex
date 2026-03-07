@@ -164,6 +164,9 @@ use ratatui::text::Line;
 use ratatui::widgets::Paragraph;
 use ratatui::widgets::Wrap;
 use reqwest::StatusCode;
+use reqwest::header::HeaderMap;
+use reqwest::header::HeaderName;
+use reqwest::header::HeaderValue;
 use serde::Deserialize;
 use tokio::sync::mpsc::UnboundedSender;
 use tokio::task::JoinHandle;
@@ -5635,7 +5638,12 @@ impl ChatWidget {
     fn prefetch_su8_usage(&mut self) {
         self.stop_su8_usage_poller();
 
-        if !self.is_su8_provider() {
+        let should_prefetch = self.is_su8_provider()
+            && self.configured_status_line_items().iter().any(|item| {
+                item == &StatusLineItem::Su8Remaining.to_string()
+                    || item == &StatusLineItem::Su8TodayUsed.to_string()
+            });
+        if !should_prefetch {
             self.su8_usage = Su8StatusLineUsage::default();
             self.refresh_status_line();
             return;
@@ -8842,7 +8850,7 @@ struct Su8UsageResponse {
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct Su8UsageRequestConfig {
     url: String,
-    headers: Vec<(String, String)>,
+    headers: HeaderMap,
     bearer_token: Option<String>,
     account_id: Option<String>,
 }
@@ -8868,26 +8876,53 @@ fn su8_usage_request_config(
     provider: &codex_core::ModelProviderInfo,
     auth: Option<&CodexAuth>,
 ) -> Option<Su8UsageRequestConfig> {
+    su8_usage_request_config_with_env(provider, auth, |name| std::env::var(name).ok())
+}
+
+fn su8_usage_request_config_with_env<F>(
+    provider: &codex_core::ModelProviderInfo,
+    auth: Option<&CodexAuth>,
+    env_lookup: F,
+) -> Option<Su8UsageRequestConfig>
+where
+    F: Fn(&str) -> Option<String>,
+{
     let url = su8_usage_url(provider)?;
-    let mut headers = Vec::new();
+    let capacity = provider
+        .http_headers
+        .as_ref()
+        .map_or(0, std::collections::HashMap::len)
+        + provider
+            .env_http_headers
+            .as_ref()
+            .map_or(0, std::collections::HashMap::len);
+    let mut headers = HeaderMap::with_capacity(capacity);
     if let Some(static_headers) = &provider.http_headers {
-        headers.extend(
-            static_headers
-                .iter()
-                .map(|(name, value)| (name.clone(), value.clone())),
-        );
+        for (name, value) in static_headers {
+            if let (Ok(name), Ok(value)) =
+                (HeaderName::try_from(name), HeaderValue::try_from(value))
+            {
+                headers.insert(name, value);
+            }
+        }
     }
     if let Some(env_headers) = &provider.env_http_headers {
         for (name, env_var) in env_headers {
-            if let Ok(value) = std::env::var(env_var)
+            if let Some(value) = env_lookup(env_var)
                 && !value.trim().is_empty()
+                && let (Ok(name), Ok(value)) =
+                    (HeaderName::try_from(name), HeaderValue::try_from(value))
             {
-                headers.push((name.clone(), value));
+                headers.insert(name, value);
             }
         }
     }
 
-    let (bearer_token, account_id) = if let Some(api_key) = provider.api_key().ok()? {
+    let provider_api_key = match &provider.env_key {
+        Some(env_key) => Some(env_lookup(env_key).filter(|value| !value.trim().is_empty())?),
+        None => None,
+    };
+    let (bearer_token, account_id) = if let Some(api_key) = provider_api_key {
         (Some(api_key), None)
     } else if let Some(token) = provider.experimental_bearer_token.clone() {
         (Some(token), None)
@@ -8920,9 +8955,7 @@ async fn fetch_su8_usage_snapshot(
     if let Some(account_id) = request_config.account_id {
         request = request.header("ChatGPT-Account-ID", account_id);
     }
-    for (name, value) in request_config.headers {
-        request = request.header(name, value);
-    }
+    request = request.headers(request_config.headers);
 
     let response = request.send().await.ok()?;
     if response.status() == StatusCode::UNAUTHORIZED || response.status() == StatusCode::FORBIDDEN {

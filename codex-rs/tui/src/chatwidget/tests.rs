@@ -111,6 +111,7 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
+use reqwest::header::HeaderValue;
 #[cfg(target_os = "windows")]
 use serial_test::serial;
 use std::collections::BTreeMap;
@@ -1945,6 +1946,22 @@ async fn su8_usage_poller_only_sends_one_immediate_snapshot() {
         "su8 poller should wait for the interval before sending another snapshot"
     );
 
+    chat.stop_su8_usage_poller();
+}
+
+#[tokio::test]
+async fn su8_usage_poller_is_gated_on_visible_status_items() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = "su8".to_string();
+    chat.config.model_provider.base_url = Some("https://example.test/v1".to_string());
+    chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
+
+    chat.prefetch_su8_usage();
+    assert!(chat.su8_usage_poller.is_none());
+
+    chat.config.tui_status_line = Some(vec!["su8-remaining".to_string()]);
+    chat.prefetch_su8_usage();
+    assert!(chat.su8_usage_poller.is_some());
     chat.stop_su8_usage_poller();
 }
 
@@ -9525,6 +9542,46 @@ async fn su8_usage_request_preserves_query_params() {
         su8_usage_url(&provider),
         Some("https://example.test/v1/usage?api-version=2025-04-01-preview".to_string())
     );
+}
+
+#[tokio::test]
+async fn su8_usage_request_config_env_headers_override_static_headers() {
+    let provider = codex_core::ModelProviderInfo {
+        name: "SU8".to_string(),
+        base_url: Some("https://example.test/v1".to_string()),
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: codex_core::WireApi::Responses,
+        query_params: None,
+        http_headers: Some(HashMap::from([(
+            "X-Test-Header".to_string(),
+            "static-value".to_string(),
+        )])),
+        env_http_headers: Some(HashMap::from([(
+            "X-Test-Header".to_string(),
+            "SU8_TEST_HEADER".to_string(),
+        )])),
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let config = su8_usage_request_config_with_env(&provider, None, |name| {
+        (name == "SU8_TEST_HEADER").then(|| "env-value".to_string())
+    })
+    .expect("request config should be built");
+
+    assert_eq!(
+        config
+            .headers
+            .get("X-Test-Header")
+            .expect("header should exist"),
+        &HeaderValue::from_static("env-value")
+    );
+    assert_eq!(config.headers.get_all("X-Test-Header").iter().count(), 1);
 }
 
 #[tokio::test]
