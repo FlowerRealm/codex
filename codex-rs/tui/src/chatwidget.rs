@@ -42,6 +42,7 @@ use crate::app_event::RealtimeAudioDeviceKind;
 use crate::app_event::Su8UsageSnapshot;
 #[cfg(all(not(target_os = "linux"), feature = "voice-input"))]
 use crate::audio_device::list_realtime_audio_device_names;
+use crate::bottom_pane::ProviderManagerView;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::StatusLinePreviewData;
 use crate::bottom_pane::StatusLineSetupView;
@@ -1380,6 +1381,12 @@ impl ChatWidget {
 
     pub(crate) fn open_app_link_view(&mut self, params: crate::bottom_pane::AppLinkViewParams) {
         let view = crate::bottom_pane::AppLinkView::new(params, self.app_event_tx.clone());
+        self.bottom_pane.show_view(Box::new(view));
+        self.request_redraw();
+    }
+
+    pub(crate) fn open_provider_manager(&mut self) {
+        let view = ProviderManagerView::new(&self.config, self.app_event_tx.clone());
         self.bottom_pane.show_view(Box::new(view));
         self.request_redraw();
     }
@@ -3908,6 +3915,9 @@ impl ChatWidget {
             }
             SlashCommand::Model => {
                 self.open_model_popup();
+            }
+            SlashCommand::Provider => {
+                self.open_provider_manager();
             }
             SlashCommand::Fast => {
                 let next_tier = if matches!(self.config.service_tier, Some(ServiceTier::Fast)) {
@@ -7500,6 +7510,14 @@ impl ChatWidget {
             }));
         self.app_event_tx
             .send(AppEvent::PersistServiceTierSelection { service_tier });
+    }
+
+    pub(crate) fn set_config(&mut self, config: Config) {
+        self.config = config;
+        self.sync_fast_command_enabled();
+        self.sync_personality_command_enabled();
+        self.sync_image_paste_enabled();
+        self.refresh_status_line();
     }
 
     pub(crate) fn current_model(&self) -> &str {

@@ -1,3 +1,4 @@
+use crate::ModelProviderInfo;
 use crate::agent::AgentStatus;
 use crate::codex::Codex;
 use crate::codex::SteerInputError;
@@ -77,6 +78,16 @@ impl CodexThread {
     ) -> ConstraintResult<()> {
         self.codex
             .set_app_server_client_name(app_server_client_name)
+            .await
+    }
+
+    pub async fn set_model_provider(
+        &self,
+        model_provider_id: String,
+        provider: ModelProviderInfo,
+    ) -> ConstraintResult<()> {
+        self.codex
+            .set_model_provider(model_provider_id, provider)
             .await
     }
 

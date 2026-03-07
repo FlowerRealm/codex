@@ -2139,6 +2139,43 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
 }
 
 #[tokio::test]
+async fn update_settings_replaces_provider_in_live_session() {
+    let (session, _turn_context) = make_session_and_context().await;
+    let mut provider = session.provider().await;
+    provider.base_url = Some("https://provider.example/v1".to_string());
+    provider.api_key = Some("sk-live".to_string());
+
+    session
+        .update_settings(SessionSettingsUpdate {
+            model_provider_id: Some("custom-provider".to_string()),
+            model_provider: Some(provider.clone()),
+            ..Default::default()
+        })
+        .await
+        .expect("provider update should succeed");
+
+    assert_eq!(session.provider().await, provider);
+    assert_eq!(session.services.model_client.provider(), provider);
+
+    let state = session.state.lock().await;
+    assert_eq!(
+        state
+            .session_configuration
+            .original_config_do_not_use
+            .model_provider_id,
+        "custom-provider"
+    );
+    assert_eq!(
+        state
+            .session_configuration
+            .original_config_do_not_use
+            .model_provider,
+        provider
+    );
+    assert_eq!(state.session_configuration.provider, provider);
+}
+
+#[tokio::test]
 async fn submit_with_id_captures_current_span_trace_context() {
     let (session, _turn_context) = make_session_and_context().await;
     let (tx_sub, rx_sub) = async_channel::bounded(1);

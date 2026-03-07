@@ -27,6 +27,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
+use std::sync::RwLock as StdRwLock;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
@@ -122,7 +123,7 @@ pub fn ws_version_from_features(config: &Config) -> bool {
 struct ModelClientState {
     auth_manager: Option<Arc<AuthManager>>,
     conversation_id: ThreadId,
-    provider: ModelProviderInfo,
+    provider: StdRwLock<ModelProviderInfo>,
     session_source: SessionSource,
     model_verbosity: Option<VerbosityConfig>,
     responses_websockets_enabled_by_feature: bool,
@@ -228,7 +229,7 @@ impl ModelClient {
             state: Arc::new(ModelClientState {
                 auth_manager,
                 conversation_id,
-                provider,
+                provider: StdRwLock::new(provider),
                 session_source,
                 model_verbosity,
                 responses_websockets_enabled_by_feature,
@@ -251,6 +252,26 @@ impl ModelClient {
             websocket_session: self.take_cached_websocket_session(),
             turn_state: Arc::new(OnceLock::new()),
         }
+    }
+
+    pub fn replace_provider(&self, provider: ModelProviderInfo) {
+        *self
+            .state
+            .provider
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = provider;
+        self.state
+            .disable_websockets
+            .store(false, Ordering::Relaxed);
+        self.store_cached_websocket_session(WebsocketSession::default());
+    }
+
+    pub(crate) fn provider(&self) -> ModelProviderInfo {
+        self.state
+            .provider
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone()
     }
 
     fn take_cached_websocket_session(&self) -> WebsocketSession {
@@ -383,9 +404,8 @@ impl ModelClient {
     /// If websockets are only enabled via model preference (no explicit feature flag), prefer the
     /// current v2 behavior.
     pub fn responses_websocket_enabled(&self, model_info: &ModelInfo) -> bool {
-        if !self.state.provider.supports_websockets
-            || self.state.disable_websockets.load(Ordering::Relaxed)
-        {
+        let provider = self.provider();
+        if !provider.supports_websockets || self.state.disable_websockets.load(Ordering::Relaxed) {
             return false;
         }
 
@@ -401,11 +421,9 @@ impl ModelClient {
             Some(manager) => manager.auth().await,
             None => None,
         };
-        let api_provider = self
-            .state
-            .provider
-            .to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &self.state.provider)?;
+        let provider = self.provider();
+        let api_provider = provider.to_api_provider(auth.as_ref().map(CodexAuth::auth_mode))?;
+        let api_auth = auth_provider_from_auth(auth.clone(), &provider)?;
         Ok(CurrentClientSetup {
             auth,
             api_provider,
@@ -734,7 +752,7 @@ impl ModelClientSession {
     fn responses_request_compression(&self, auth: Option<&crate::auth::CodexAuth>) -> Compression {
         if self.client.state.enable_request_compression
             && auth.is_some_and(CodexAuth::is_chatgpt_auth)
-            && self.client.state.provider.is_openai()
+            && self.client.provider().is_openai()
         {
             Compression::Zstd
         } else {
@@ -759,11 +777,9 @@ impl ModelClientSession {
     ) -> Result<ResponseStream> {
         if let Some(path) = &*CODEX_RS_SSE_FIXTURE {
             warn!(path, "Streaming from fixture");
-            let stream = codex_api::stream_from_fixture(
-                path,
-                self.client.state.provider.stream_idle_timeout(),
-            )
-            .map_err(map_api_error)?;
+            let stream =
+                codex_api::stream_from_fixture(path, self.client.provider().stream_idle_timeout())
+                    .map_err(map_api_error)?;
             let (stream, _last_request_rx) = map_response_stream(stream, session_telemetry.clone());
             return Ok(stream);
         }
@@ -983,7 +999,7 @@ impl ModelClientSession {
         service_tier: Option<ServiceTier>,
         turn_metadata_header: Option<&str>,
     ) -> Result<ResponseStream> {
-        let wire_api = self.client.state.provider.wire_api;
+        let wire_api = self.client.provider().wire_api;
         match wire_api {
             WireApi::Responses => {
                 if self.client.responses_websocket_enabled(model_info) {

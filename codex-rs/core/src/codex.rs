@@ -608,6 +608,20 @@ impl Codex {
             .await
     }
 
+    pub(crate) async fn set_model_provider(
+        &self,
+        model_provider_id: String,
+        provider: ModelProviderInfo,
+    ) -> ConstraintResult<()> {
+        self.session
+            .update_settings(SessionSettingsUpdate {
+                model_provider_id: Some(model_provider_id),
+                model_provider: Some(provider),
+                ..Default::default()
+            })
+            .await
+    }
+
     pub(crate) async fn agent_status(&self) -> AgentStatus {
         self.agent_status.borrow().clone()
     }
@@ -950,6 +964,17 @@ impl SessionConfiguration {
         if let Some(personality) = updates.personality {
             next_configuration.personality = Some(personality);
         }
+        if updates.model_provider_id.is_some() || updates.model_provider.is_some() {
+            let mut config = (*next_configuration.original_config_do_not_use).clone();
+            if let Some(model_provider_id) = updates.model_provider_id.clone() {
+                config.model_provider_id = model_provider_id;
+            }
+            if let Some(model_provider) = updates.model_provider.clone() {
+                next_configuration.provider = model_provider.clone();
+                config.model_provider = model_provider;
+            }
+            next_configuration.original_config_do_not_use = Arc::new(config);
+        }
         if let Some(approval_policy) = updates.approval_policy {
             next_configuration.approval_policy.set(approval_policy)?;
         }
@@ -984,6 +1009,8 @@ pub(crate) struct SessionSettingsUpdate {
     pub(crate) service_tier: Option<Option<ServiceTier>>,
     pub(crate) final_output_json_schema: Option<Option<Value>>,
     pub(crate) personality: Option<Personality>,
+    pub(crate) model_provider_id: Option<String>,
+    pub(crate) model_provider: Option<ModelProviderInfo>,
     pub(crate) app_server_client_name: Option<String>,
 }
 
@@ -2089,6 +2116,20 @@ impl Session {
                 let next_cwd = updated.cwd.clone();
                 let codex_home = updated.codex_home.clone();
                 let session_source = updated.session_source.clone();
+                let provider_changed = state.session_configuration.provider != updated.provider
+                    || state
+                        .session_configuration
+                        .original_config_do_not_use
+                        .model_provider_id
+                        != updated.original_config_do_not_use.model_provider_id;
+                if provider_changed {
+                    if let Some(startup_regular_task) = state.take_startup_regular_task() {
+                        startup_regular_task.abort();
+                    }
+                    self.services
+                        .model_client
+                        .replace_provider(updated.provider.clone());
+                }
                 state.session_configuration = updated;
                 drop(state);
 
@@ -4173,6 +4214,8 @@ mod handlers {
                         service_tier,
                         final_output_json_schema: Some(final_output_json_schema),
                         personality,
+                        model_provider_id: None,
+                        model_provider: None,
                         app_server_client_name: None,
                     },
                 )
