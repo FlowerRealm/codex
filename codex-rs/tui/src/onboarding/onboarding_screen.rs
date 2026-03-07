@@ -468,6 +468,7 @@ pub(crate) async fn run_onboarding_app(
     use tokio_stream::StreamExt;
 
     let codex_home = args.config.codex_home.clone();
+    let active_profile = args.config.active_profile.clone();
     let mut onboarding_screen = OnboardingScreen::new(tui, args);
     // One-time guard to fully clear the screen after ChatGPT login success message is shown
     let mut did_full_clear_after_success = false;
@@ -530,6 +531,7 @@ pub(crate) async fn run_onboarding_app(
     let provider_changed = if let Some(provider_id) = selected_provider.as_deref() {
         if provider_id != onboarding_screen.initial_provider_id {
             let _ = codex_core::config::edit::ConfigEditsBuilder::new(&codex_home)
+                .with_profile(active_profile.as_deref())
                 .set_default_model_provider(provider_id)
                 .apply_blocking();
             true

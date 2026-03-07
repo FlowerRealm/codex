@@ -619,7 +619,7 @@ async fn run_ratatui_app(
         // If this onboarding run included the login step, always refresh cloud requirements and
         // rebuild config. This avoids missing newly available cloud requirements due to login
         // status detection edge cases.
-        if show_login_screen {
+        if show_login_screen || onboarding_result.provider_changed {
             cloud_requirements = cloud_requirements_loader(
                 auth_manager.clone(),
                 initial_config.chatgpt_base_url.clone(),

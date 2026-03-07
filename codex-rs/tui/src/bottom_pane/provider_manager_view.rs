@@ -78,6 +78,7 @@ impl Field {
 #[derive(Clone)]
 struct ProviderDraft {
     original_id: Option<String>,
+    template: ModelProviderInfo,
     id: String,
     name: String,
     base_url: String,
@@ -89,6 +90,23 @@ impl ProviderDraft {
     fn new() -> Self {
         Self {
             original_id: None,
+            template: ModelProviderInfo {
+                name: String::new(),
+                base_url: None,
+                api_key: None,
+                env_key: None,
+                env_key_instructions: None,
+                experimental_bearer_token: None,
+                wire_api: WireApi::Responses,
+                query_params: None,
+                http_headers: None,
+                env_http_headers: None,
+                request_max_retries: None,
+                stream_max_retries: None,
+                stream_idle_timeout_ms: None,
+                requires_openai_auth: false,
+                supports_websockets: false,
+            },
             id: String::new(),
             name: String::new(),
             base_url: String::new(),
@@ -100,6 +118,7 @@ impl ProviderDraft {
     fn from_row(row: &ProviderRow) -> Self {
         Self {
             original_id: Some(row.id.clone()),
+            template: row.provider.clone(),
             id: row.id.clone(),
             name: row.provider.name.clone(),
             base_url: row.provider.base_url.clone().unwrap_or_default(),
@@ -127,23 +146,12 @@ impl ProviderDraft {
     }
 
     fn to_provider(&self) -> ModelProviderInfo {
-        ModelProviderInfo {
-            name: self.name.trim().to_string(),
-            base_url: Some(self.base_url.trim().to_string()).filter(|value| !value.is_empty()),
-            api_key: Some(self.api_key.trim().to_string()).filter(|value| !value.is_empty()),
-            env_key: None,
-            env_key_instructions: None,
-            experimental_bearer_token: None,
-            wire_api: WireApi::Responses,
-            query_params: None,
-            http_headers: None,
-            env_http_headers: None,
-            request_max_retries: None,
-            stream_max_retries: None,
-            stream_idle_timeout_ms: None,
-            requires_openai_auth: false,
-            supports_websockets: false,
-        }
+        let mut provider = self.template.clone();
+        provider.name = self.name.trim().to_string();
+        provider.base_url =
+            Some(self.base_url.trim().to_string()).filter(|value| !value.is_empty());
+        provider.api_key = Some(self.api_key.trim().to_string()).filter(|value| !value.is_empty());
+        provider
     }
 }
 
@@ -295,6 +303,13 @@ impl ProviderManagerView {
         if let Some(original_id) = edit.draft.original_id.as_deref()
             && original_id != provider_id
         {
+            if original_id == self.default_provider_id {
+                self.error = Some(
+                    "Rename is disabled for the current default provider. Switch defaults first."
+                        .to_string(),
+                );
+                return;
+            }
             self.app_event_tx.send(AppEvent::RemoveModelProvider {
                 id: original_id.to_string(),
             });
@@ -602,5 +617,153 @@ impl Renderable for ProviderManagerView {
             Mode::List => self.render_list(area, buf),
             Mode::Edit(edit) => self.render_edit(area, buf, edit),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use codex_core::config::ConfigBuilder;
+    use pretty_assertions::assert_eq;
+    use std::collections::HashMap;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    async fn config_with_custom_provider(id: &str, provider: ModelProviderInfo) -> Config {
+        let mut config = ConfigBuilder::default()
+            .codex_home(std::env::temp_dir())
+            .build()
+            .await
+            .expect("config");
+        config
+            .model_providers
+            .insert(id.to_string(), provider.clone());
+        config.model_provider_id = id.to_string();
+        config.model_provider = provider;
+        config
+    }
+
+    fn provider_manager_view(
+        config: &Config,
+    ) -> (
+        ProviderManagerView,
+        tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    ) {
+        let (tx, rx) = unbounded_channel();
+        (
+            ProviderManagerView::new(config, AppEventSender::new(tx)),
+            rx,
+        )
+    }
+
+    #[tokio::test]
+    async fn editing_provider_preserves_unexposed_fields() {
+        let provider = ModelProviderInfo {
+            name: "Original".to_string(),
+            base_url: Some("https://example.com/v1".to_string()),
+            api_key: Some("sk-old".to_string()),
+            env_key: Some("CUSTOM_API_KEY".to_string()),
+            env_key_instructions: Some("export CUSTOM_API_KEY=...".to_string()),
+            experimental_bearer_token: Some("token".to_string()),
+            wire_api: WireApi::Responses,
+            query_params: Some(HashMap::from([(
+                "api-version".to_string(),
+                "2025-01-01".to_string(),
+            )])),
+            http_headers: Some(HashMap::from([(
+                "x-extra-header".to_string(),
+                "true".to_string(),
+            )])),
+            env_http_headers: Some(HashMap::from([(
+                "x-env-header".to_string(),
+                "CUSTOM_HEADER".to_string(),
+            )])),
+            request_max_retries: Some(3),
+            stream_max_retries: Some(4),
+            stream_idle_timeout_ms: Some(5_000),
+            requires_openai_auth: true,
+            supports_websockets: true,
+        };
+        let config = config_with_custom_provider("custom-provider", provider.clone()).await;
+        let (mut view, mut rx) = provider_manager_view(&config);
+
+        view.start_edit();
+        let Mode::Edit(edit) = &mut view.mode else {
+            panic!("expected edit mode");
+        };
+        edit.textarea.set_text_clearing_elements("Renamed provider");
+
+        view.save_current_draft();
+
+        assert_eq!(view.error, None);
+        assert!(view.complete);
+        match rx.try_recv().expect("persist event") {
+            AppEvent::PersistModelProvider {
+                id,
+                provider: saved,
+            } => {
+                assert_eq!(id, "custom-provider");
+                assert_eq!(saved.name, "Renamed provider");
+                assert_eq!(saved.base_url, provider.base_url);
+                assert_eq!(saved.api_key, provider.api_key);
+                assert_eq!(saved.env_key, provider.env_key);
+                assert_eq!(saved.env_key_instructions, provider.env_key_instructions);
+                assert_eq!(
+                    saved.experimental_bearer_token,
+                    provider.experimental_bearer_token
+                );
+                assert_eq!(saved.query_params, provider.query_params);
+                assert_eq!(saved.http_headers, provider.http_headers);
+                assert_eq!(saved.env_http_headers, provider.env_http_headers);
+                assert_eq!(saved.request_max_retries, provider.request_max_retries);
+                assert_eq!(saved.stream_max_retries, provider.stream_max_retries);
+                assert_eq!(
+                    saved.stream_idle_timeout_ms,
+                    provider.stream_idle_timeout_ms
+                );
+                assert_eq!(saved.requires_openai_auth, provider.requires_openai_auth);
+                assert_eq!(saved.supports_websockets, provider.supports_websockets);
+            }
+            event => panic!("unexpected event: {event:?}"),
+        }
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn cannot_rename_current_default_provider() {
+        let provider = ModelProviderInfo {
+            name: "Original".to_string(),
+            base_url: Some("https://example.com/v1".to_string()),
+            api_key: Some("sk-old".to_string()),
+            env_key: Some("CUSTOM_API_KEY".to_string()),
+            env_key_instructions: None,
+            experimental_bearer_token: None,
+            wire_api: WireApi::Responses,
+            query_params: None,
+            http_headers: None,
+            env_http_headers: None,
+            request_max_retries: None,
+            stream_max_retries: None,
+            stream_idle_timeout_ms: None,
+            requires_openai_auth: false,
+            supports_websockets: false,
+        };
+        let config = config_with_custom_provider("custom-provider", provider).await;
+        let (mut view, mut rx) = provider_manager_view(&config);
+
+        view.start_edit();
+        let Mode::Edit(edit) = &mut view.mode else {
+            panic!("expected edit mode");
+        };
+        edit.draft.focused_field = Field::Id;
+        edit.textarea.set_text_clearing_elements("renamed-provider");
+
+        view.save_current_draft();
+
+        assert_eq!(
+            view.error.as_deref(),
+            Some("Rename is disabled for the current default provider. Switch defaults first."),
+        );
+        assert!(!view.complete);
+        assert!(rx.try_recv().is_err());
     }
 }
