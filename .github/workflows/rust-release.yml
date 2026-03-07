@@ -64,9 +64,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15-xlarge
+          - runner: macos-15
             target: aarch64-apple-darwin
-          - runner: macos-15-xlarge
+          - runner: macos-15
             target: x86_64-apple-darwin
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
@@ -575,7 +575,7 @@ jobs:
                 ;;
             esac
 
-            publish_cmd=(npm publish "${GITHUB_WORKSPACE}/${tarball}")
+            publish_cmd=(npm publish --access public "${GITHUB_WORKSPACE}/${tarball}")
             if [[ -n "${tag}" ]]; then
               publish_cmd+=(--tag "${tag}")
             fi
@@ -604,7 +604,7 @@ jobs:
     needs: release
     # Only publish stable/mainline releases to WinGet; pre-releases include a
     # '-' in the semver string (e.g., 1.2.3-alpha.1).
-    if: ${{ !contains(needs.release.outputs.version, '-') }}
+    if: ${{ !contains(needs.release.outputs.version, '-') && github.repository == 'openai/codex' }}
     # This job only invokes a GitHub Action to open/update the winget-pkgs PR;
     # it does not execute Windows-only tooling, so Linux is sufficient.
     runs-on: ubuntu-latest
@@ -626,6 +626,7 @@ jobs:
     name: Update latest-alpha-cli branch
     permissions:
       contents: write
+    if: ${{ contains(needs.release.outputs.version, '-alpha.') && github.repository == 'openai/codex' }}
     needs: release
     runs-on: ubuntu-latest
 

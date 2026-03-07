@@ -1,6 +1,6 @@
 {
   "name": "@flowerrealm/realmx-shell-tool-mcp",
-  "version": "0.0.0-dev",
+  "version": "0.1.0",
   "description": "Patched Bash and Zsh binaries for Codex shell execution.",
   "license": "Apache-2.0",
   "engines": {
@@ -12,8 +12,11 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openai/codex.git",
+    "url": "git+https://github.com/FlowerRealm/realmx.git",
     "directory": "shell-tool-mcp"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "clean": "rm -rf bin",

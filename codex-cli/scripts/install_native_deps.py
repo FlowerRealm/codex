@@ -20,7 +20,9 @@ from urllib.request import urlopen
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 CODEX_CLI_ROOT = SCRIPT_DIR.parent
-DEFAULT_WORKFLOW_URL = "https://github.com/openai/codex/actions/runs/17952349351"  # rust-v0.40.0
+DEFAULT_WORKFLOW_URL = "https://github.com/openai/codex/actions/runs/22789419820"
+DEFAULT_WORKFLOW_REPO = "openai/codex"
+DEFAULT_WORKFLOW_NAME = ".github/workflows/rust-release.yml"
 VENDOR_DIR_NAME = "vendor"
 RG_MANIFEST = CODEX_CLI_ROOT / "bin" / "rg"
 BINARY_TARGETS = (
@@ -119,6 +121,31 @@ def _gha_group(title: str):
             print("::endgroup::", flush=True)
 
 
+def resolve_default_workflow_url() -> str:
+    cmd = [
+        "gh",
+        "run",
+        "list",
+        "--repo",
+        DEFAULT_WORKFLOW_REPO,
+        "--workflow",
+        DEFAULT_WORKFLOW_NAME,
+        "--limit",
+        "20",
+        "--json",
+        "url,conclusion",
+        "--jq",
+        "first(.[] | select(.conclusion == \"success\")).url",
+    ]
+    try:
+        workflow_url = subprocess.check_output(cmd, text=True).strip()
+    except Exception:
+        return DEFAULT_WORKFLOW_URL
+    if workflow_url and workflow_url != "null":
+        return workflow_url
+    return DEFAULT_WORKFLOW_URL
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Install native Codex binaries.")
     parser.add_argument(
@@ -165,17 +192,15 @@ def main() -> int:
         "rg",
     ]
 
-    workflow_url = (args.workflow_url or DEFAULT_WORKFLOW_URL).strip()
-    if not workflow_url:
-        workflow_url = DEFAULT_WORKFLOW_URL
+    workflow_url = (args.workflow_url or resolve_default_workflow_url()).strip()
 
-    workflow_id = workflow_url.rstrip("/").split("/")[-1]
+    workflow_repo, workflow_id = parse_workflow_ref(workflow_url)
     print(f"Downloading native artifacts from workflow {workflow_id}...")
 
     with _gha_group(f"Download native artifacts from workflow {workflow_id}"):
         with tempfile.TemporaryDirectory(prefix="codex-native-artifacts-") as artifacts_dir_str:
             artifacts_dir = Path(artifacts_dir_str)
-            _download_artifacts(workflow_id, artifacts_dir)
+            _download_artifacts(workflow_repo, workflow_id, artifacts_dir)
             install_binary_components(
                 artifacts_dir,
                 vendor_dir,
@@ -259,7 +284,16 @@ def fetch_rg(
     return [results[target] for target in targets]
 
 
-def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
+def parse_workflow_ref(workflow_url: str) -> tuple[str, str]:
+    parsed = urlparse(workflow_url)
+    path = parsed.path.strip("/")
+    parts = path.split("/")
+    if len(parts) >= 5 and parts[2] == "actions" and parts[3] == "runs":
+        return f"{parts[0]}/{parts[1]}", parts[4]
+    return "FlowerRealm/realmx", workflow_url.rstrip("/").split("/")[-1]
+
+
+def _download_artifacts(workflow_repo: str, workflow_id: str, dest_dir: Path) -> None:
     cmd = [
         "gh",
         "run",
@@ -267,7 +301,7 @@ def _download_artifacts(workflow_id: str, dest_dir: Path) -> None:
         "--dir",
         str(dest_dir),
         "--repo",
-        "openai/codex",
+        workflow_repo,
         workflow_id,
     ]
     subprocess.check_call(cmd)

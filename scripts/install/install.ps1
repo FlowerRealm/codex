@@ -41,7 +41,7 @@ function Get-ReleaseUrl {
         [string]$ResolvedVersion
     )
 
-    return "https://github.com/openai/codex/releases/download/rust-v$ResolvedVersion/$AssetName"
+    return "https://github.com/FlowerRealm/realmx/releases/download/rust-v$ResolvedVersion/$AssetName"
 }
 
 function Path-Contains {
@@ -70,7 +70,7 @@ function Resolve-Version {
         return $normalizedVersion
     }
 
-    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/openai/codex/releases/latest"
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/FlowerRealm/realmx/releases/latest"
     if (-not $release.tag_name) {
         Write-Error "Failed to resolve the latest Realmx release version."
         exit 1

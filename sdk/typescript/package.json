@@ -1,11 +1,14 @@
 {
   "name": "@flowerrealm/realmx-sdk",
-  "version": "0.0.0-dev",
+  "version": "0.1.0",
   "description": "TypeScript SDK for Codex APIs.",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/openai/codex.git",
+    "url": "git+https://github.com/FlowerRealm/realmx.git",
     "directory": "sdk/typescript"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": [
     "openai",
