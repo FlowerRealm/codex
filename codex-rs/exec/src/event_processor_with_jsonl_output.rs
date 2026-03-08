@@ -26,6 +26,7 @@ use crate::exec_events::McpToolCallStatus;
 use crate::exec_events::PatchApplyStatus;
 use crate::exec_events::PatchChangeKind;
 use crate::exec_events::ReasoningItem;
+use crate::exec_events::SkillUsedItem;
 use crate::exec_events::ThreadErrorEvent;
 use crate::exec_events::ThreadEvent;
 use crate::exec_events::ThreadItem;
@@ -173,6 +174,16 @@ impl EventProcessorWithJsonOutput {
                     id: self.get_next_item_id(),
                     details: ThreadItemDetails::Error(ErrorItem {
                         message: ev.message.clone(),
+                    }),
+                };
+                vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]
+            }
+            protocol::EventMsg::SkillUsed(ev) => {
+                let item = ThreadItem {
+                    id: self.get_next_item_id(),
+                    details: ThreadItemDetails::SkillUsed(SkillUsedItem {
+                        name: ev.name.clone(),
+                        invocation_type: ev.invocation_type,
                     }),
                 };
                 vec![ThreadEvent::ItemCompleted(ItemCompletedEvent { item })]

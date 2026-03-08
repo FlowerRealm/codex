@@ -86,7 +86,9 @@ use codex_protocol::protocol::RateLimitWindow;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
 use codex_protocol::protocol::SessionSource;
+use codex_protocol::protocol::SkillInvocationType;
 use codex_protocol::protocol::SkillScope;
+use codex_protocol::protocol::SkillUsedEvent;
 use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::TerminalInteractionEvent;
 use codex_protocol::protocol::ThreadRolledBackEvent;
@@ -9460,6 +9462,43 @@ async fn warning_event_adds_warning_history_cell() {
         rendered.contains("test warning message"),
         "warning cell missing content: {rendered}"
     );
+}
+
+#[tokio::test]
+async fn skill_used_event_adds_info_history_cell() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.handle_codex_event(Event {
+        id: "sub-1".into(),
+        msg: EventMsg::SkillUsed(SkillUsedEvent {
+            name: "slides".to_string(),
+            invocation_type: SkillInvocationType::Explicit,
+        }),
+    });
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info history cell");
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(
+        rendered.contains("Using skill (explicit): slides"),
+        "info cell missing content: {rendered}"
+    );
+}
+
+#[tokio::test]
+async fn skill_used_event_history_snapshot() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.handle_codex_event(Event {
+        id: "sub-1".into(),
+        msg: EventMsg::SkillUsed(SkillUsedEvent {
+            name: "slides".to_string(),
+            invocation_type: SkillInvocationType::Explicit,
+        }),
+    });
+
+    let cells = drain_insert_history(&mut rx);
+    assert_eq!(cells.len(), 1, "expected one info history cell");
+    let combined = lines_to_single_string(&cells[0]);
+    assert_snapshot!("skill_used_event_history_snapshot", combined);
 }
 
 #[tokio::test]

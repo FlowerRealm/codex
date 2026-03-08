@@ -28,6 +28,7 @@ use codex_protocol::protocol::McpToolCallEndEvent;
 use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::PatchApplyEndEvent;
 use codex_protocol::protocol::SessionConfiguredEvent;
+use codex_protocol::protocol::SkillInvocationType;
 use codex_protocol::protocol::StreamErrorEvent;
 use codex_protocol::protocol::TurnAbortReason;
 use codex_protocol::protocol::TurnCompleteEvent;
@@ -229,6 +230,15 @@ impl EventProcessor for EventProcessorWithHumanOutput {
                     self,
                     "{} {message}",
                     "warning:".style(self.yellow).style(self.bold)
+                );
+            }
+            EventMsg::SkillUsed(event) => {
+                let invocation_type = format_skill_invocation_type(event.invocation_type);
+                ts_msg!(
+                    self,
+                    "{} Using skill ({invocation_type}): {}",
+                    "•".style(self.dimmed),
+                    event.name
                 );
             }
             EventMsg::ModelReroute(_) => {}
@@ -942,6 +952,7 @@ impl EventProcessorWithHumanOutput {
                 | EventMsg::ListCustomPromptsResponse(_)
                 | EventMsg::ListSkillsResponse(_)
                 | EventMsg::ListRemoteSkillsResponse(_)
+                | EventMsg::SkillUsed(_)
                 | EventMsg::RemoteSkillDownloaded(_)
                 | EventMsg::RawResponseItem(_)
                 | EventMsg::UserMessage(_)
@@ -971,6 +982,7 @@ impl EventProcessorWithHumanOutput {
             msg,
             EventMsg::Error(_)
                 | EventMsg::Warning(_)
+                | EventMsg::SkillUsed(_)
                 | EventMsg::DeprecationNotice(_)
                 | EventMsg::StreamError(_)
                 | EventMsg::TurnComplete(_)
@@ -1059,6 +1071,13 @@ impl EventProcessorWithHumanOutput {
         let _ = std::io::stderr().flush();
         self.progress_active = true;
         self.progress_last_len = line.len();
+    }
+}
+
+fn format_skill_invocation_type(invocation_type: SkillInvocationType) -> &'static str {
+    match invocation_type {
+        SkillInvocationType::Explicit => "explicit",
+        SkillInvocationType::Implicit => "implicit",
     }
 }
 
@@ -1240,6 +1259,7 @@ fn format_mcp_invocation(invocation: &McpInvocation) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::format_skill_invocation_type;
     use super::should_print_final_message_to_stdout;
     use pretty_assertions::assert_eq;
 
@@ -1272,6 +1292,18 @@ mod tests {
         assert_eq!(
             should_print_final_message_to_stdout(None, false, false),
             false
+        );
+    }
+
+    #[test]
+    fn formats_skill_invocation_type_labels() {
+        assert_eq!(
+            format_skill_invocation_type(SkillInvocationType::Explicit),
+            "explicit"
+        );
+        assert_eq!(
+            format_skill_invocation_type(SkillInvocationType::Implicit),
+            "implicit"
         );
     }
 }

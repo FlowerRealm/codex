@@ -9,6 +9,9 @@ use crate::codex::Session;
 use crate::codex::TurnContext;
 use crate::skills::SkillLoadOutcome;
 use crate::skills::SkillMetadata;
+use codex_protocol::protocol::EventMsg;
+use codex_protocol::protocol::SkillInvocationType;
+use codex_protocol::protocol::SkillUsedEvent;
 
 pub(crate) fn build_implicit_skill_path_indexes(
     skills: Vec<SkillMetadata>,
@@ -93,6 +96,15 @@ pub(crate) async fn maybe_emit_implicit_skill_invocation(
     if !inserted {
         return;
     }
+
+    sess.send_event(
+        turn_context,
+        EventMsg::SkillUsed(SkillUsedEvent {
+            name: invocation.skill_name.clone(),
+            invocation_type: SkillInvocationType::Implicit,
+        }),
+    )
+    .await;
 
     turn_context.session_telemetry.counter(
         "codex.skill.injected",
