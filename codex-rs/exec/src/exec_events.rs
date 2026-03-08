@@ -1,4 +1,5 @@
 use codex_protocol::models::WebSearchAction;
+use codex_protocol::protocol::SkillInvocationType;
 use serde::Deserialize;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
@@ -120,6 +121,8 @@ pub enum ThreadItemDetails {
     /// Captures a web search request. It starts when the search is kicked off
     /// and completes when results are returned to the agent.
     WebSearch(WebSearchItem),
+    /// Records that a skill was used during the turn.
+    SkillUsed(SkillUsedItem),
     /// Tracks the agent's running to-do list. It starts when the plan is first
     /// issued, updates as steps change state, and completes when the turn ends.
     TodoList(TodoListItem),
@@ -290,6 +293,13 @@ pub struct WebSearchItem {
     pub id: String,
     pub query: String,
     pub action: WebSearchAction,
+}
+
+/// Records a skill invocation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, TS)]
+pub struct SkillUsedItem {
+    pub name: String,
+    pub invocation_type: SkillInvocationType,
 }
 
 /// An error notification.

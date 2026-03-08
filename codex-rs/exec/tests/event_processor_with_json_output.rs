@@ -18,6 +18,7 @@ use codex_exec::exec_events::McpToolCallStatus;
 use codex_exec::exec_events::PatchApplyStatus;
 use codex_exec::exec_events::PatchChangeKind;
 use codex_exec::exec_events::ReasoningItem;
+use codex_exec::exec_events::SkillUsedItem;
 use codex_exec::exec_events::ThreadErrorEvent;
 use codex_exec::exec_events::ThreadEvent;
 use codex_exec::exec_events::ThreadItem;
@@ -63,6 +64,8 @@ use codex_protocol::protocol::PatchApplyEndEvent;
 use codex_protocol::protocol::PatchApplyStatus as CorePatchApplyStatus;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::protocol::SessionConfiguredEvent;
+use codex_protocol::protocol::SkillInvocationType;
+use codex_protocol::protocol::SkillUsedEvent;
 use codex_protocol::protocol::WarningEvent;
 use codex_protocol::protocol::WebSearchBeginEvent;
 use codex_protocol::protocol::WebSearchEndEvent;
@@ -1305,6 +1308,30 @@ fn task_complete_produces_turn_completed_with_usage() {
                 input_tokens: 1200,
                 cached_input_tokens: 200,
                 output_tokens: 345,
+            },
+        })]
+    );
+}
+
+#[test]
+fn skill_used_produces_completed_skill_item() {
+    let mut ep = EventProcessorWithJsonOutput::new(None);
+    let out = ep.collect_thread_events(&event(
+        "e1",
+        EventMsg::SkillUsed(SkillUsedEvent {
+            name: "su8-reviewer".to_string(),
+            invocation_type: SkillInvocationType::Explicit,
+        }),
+    ));
+    assert_eq!(
+        out,
+        vec![ThreadEvent::ItemCompleted(ItemCompletedEvent {
+            item: ThreadItem {
+                id: "item_0".to_string(),
+                details: ThreadItemDetails::SkillUsed(SkillUsedItem {
+                    name: "su8-reviewer".to_string(),
+                    invocation_type: SkillInvocationType::Explicit,
+                }),
             },
         })]
     );
