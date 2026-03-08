@@ -9419,7 +9419,7 @@ async fn skill_used_event_adds_info_history_cell() {
     assert_eq!(cells.len(), 1, "expected one info history cell");
     let rendered = lines_to_single_string(&cells[0]);
     assert!(
-        rendered.contains("Using skill: slides"),
+        rendered.contains("Using skill (explicit): slides"),
         "info cell missing content: {rendered}"
     );
 }

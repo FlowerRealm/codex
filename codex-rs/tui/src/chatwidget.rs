@@ -131,6 +131,7 @@ use codex_protocol::protocol::PatchApplyBeginEvent;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_protocol::protocol::ReviewRequest;
 use codex_protocol::protocol::ReviewTarget;
+use codex_protocol::protocol::SkillInvocationType;
 use codex_protocol::protocol::SkillMetadata as ProtocolSkillMetadata;
 use codex_protocol::protocol::SkillUsedEvent;
 use codex_protocol::protocol::StreamErrorEvent;
@@ -1941,9 +1942,19 @@ impl ChatWidget {
         self.request_redraw();
     }
 
-    fn on_skill_used(&mut self, SkillUsedEvent { name, .. }: SkillUsedEvent) {
+    fn on_skill_used(
+        &mut self,
+        SkillUsedEvent {
+            name,
+            invocation_type,
+        }: SkillUsedEvent,
+    ) {
+        let invocation_type = match invocation_type {
+            SkillInvocationType::Explicit => "explicit",
+            SkillInvocationType::Implicit => "implicit",
+        };
         self.add_to_history(history_cell::new_info_event(
-            format!("Using skill: {name}"),
+            format!("Using skill ({invocation_type}): {name}"),
             None,
         ));
         self.request_redraw();
