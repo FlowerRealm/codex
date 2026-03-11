@@ -50,3 +50,15 @@ index 1f89467..8f20f10 100644
          ],
      }),
  )
+diff --git a/toolchain/bootstrap/declare_toolchains.bzl b/toolchain/bootstrap/declare_toolchains.bzl
+index 2ce0c4a..fa13e36 100644
+--- a/toolchain/bootstrap/declare_toolchains.bzl
++++ b/toolchain/bootstrap/declare_toolchains.bzl
+@@ -53,6 +53,7 @@ def declare_tool_map(exec_os, exec_cpu):
+         # what the version is?
+         destination = prefix + "/lib/clang/21/include",
+         strip_prefix = "clang/lib/Headers",
++        visibility = ["//visibility:public"],
+     )
+ 
+     cc_tool(
