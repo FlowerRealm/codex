@@ -80,7 +80,7 @@ fn test_model_info(
 async fn model_change_appends_model_instructions_developer_message() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let server = MockServer::start().await;
+    let server = start_mock_server().await;
     let resp_mock = mount_sse_sequence(
         &server,
         vec![sse_completed("resp-1"), sse_completed("resp-2")],
