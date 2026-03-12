@@ -423,7 +423,8 @@ jobs:
   tests:
     name: Tests — ${{ matrix.runner }} - ${{ matrix.target }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    # Windows test jobs have repeatedly hit the 30 minute cap in CI.
+    timeout-minutes: ${{ startsWith(matrix.runner, 'windows') && 45 || 30 }}
     needs: changed
     if: ${{ needs.changed.outputs.codex == 'true' || needs.changed.outputs.workflows == 'true' || github.event_name == 'push' }}
     defaults:
