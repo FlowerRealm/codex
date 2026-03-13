@@ -19,6 +19,10 @@ In the codex-rs folder where the rust code lives:
   repo root to refresh `MODULE.bazel.lock`, and include that lockfile update in the same change.
 - After dependency changes, run `just bazel-lock-check` from the repo root so lockfile drift is caught
   locally before CI.
+- Bazel does not automatically make source-tree files available to compile-time Rust file access. If
+  you add `include_str!`, `include_bytes!`, `sqlx::migrate!`, or similar build-time file or
+  directory reads, update the crate's `BUILD.bazel` (`compile_data`, `build_script_data`, or test
+  data) or Bazel may fail even when Cargo passes.
 - Do not create small helper methods that are referenced only once.
 - Avoid large modules:
   - Prefer adding new modules instead of growing existing ones.
@@ -182,4 +186,4 @@ These guidelines apply to app-server protocol work in `codex-rs`, especially:
 - Validate with `cargo test -p codex-app-server-protocol`.
 - Avoid boilerplate tests that only assert experimental field markers for individual
   request fields in `common.rs`; rely on schema generation/tests and behavioral coverage instead.
-- Avoid run test in local anymore, please run test in Github CI
+- Avoid run test in local anymore, please run test in Github CI, that's very important, don't run test locally, you must run it in remotely

@@ -3419,7 +3419,7 @@ impl App {
                         lines.push(Line::from(""));
                     }
                     if let Some(rule_line) =
-                        crate::bottom_pane::format_additional_permissions_rule(&permissions)
+                        crate::bottom_pane::format_requested_permissions_rule(&permissions)
                     {
                         lines.push(Line::from(vec![
                             "Permission rule: ".into(),
