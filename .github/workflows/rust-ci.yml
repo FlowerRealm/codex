@@ -6,9 +6,6 @@ on:
       - main
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 # CI builds in debug (dev) for faster signal.
 
 jobs:
@@ -194,6 +191,12 @@ jobs:
           cache-directories: ${{ contains(matrix.target, 'musl') && '.cargo-home' || '' }}
           shared-key: rust-${{ github.job }}-${{ matrix.runner }}-${{ matrix.target }}-${{ matrix.profile }}
 
+      - name: Install cargo-binstall
+        if: ${{ env.USE_SCCACHE == 'true' || matrix.profile == 'release' }}
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        with:
+          tool: cargo-binstall@1.15.11
+
       - name: Export sccache GitHub cache environment
         if: ${{ env.USE_SCCACHE == 'true' }}
         uses: actions/github-script@v8
@@ -204,9 +207,7 @@ jobs:
 
       - name: Install sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
-        uses: mozilla-actions/sccache-action@v0.0.9
-        with:
-          version: v0.14.0
+        run: cargo binstall sccache --version 0.14.0 --no-confirm
 
       - name: Configure sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
@@ -310,9 +311,7 @@ jobs:
 
       - name: Install cargo-chef
         if: ${{ matrix.profile == 'release' }}
-        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
-        with:
-          tool: cargo-chef@0.1.71
+        run: cargo binstall cargo-chef --version 0.1.71 --no-confirm
 
       - name: Pre-warm dependency cache (cargo-chef)
         if: ${{ matrix.profile == 'release' }}
@@ -420,6 +419,12 @@ jobs:
           cache-workspace-crates: ${{ startsWith(matrix.runner, 'windows') && 'true' || 'false' }}
           shared-key: rust-${{ github.job }}-${{ matrix.runner }}-${{ matrix.target }}-${{ matrix.profile }}
 
+      - name: Install cargo-binstall
+        if: ${{ env.USE_SCCACHE == 'true' }}
+        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        with:
+          tool: cargo-binstall@1.15.11
+
       - name: Export sccache GitHub cache environment
         if: ${{ env.USE_SCCACHE == 'true' }}
         uses: actions/github-script@v8
@@ -430,9 +435,7 @@ jobs:
 
       - name: Install sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
-        uses: mozilla-actions/sccache-action@v0.0.9
-        with:
-          version: v0.14.0
+        run: cargo binstall sccache --version 0.14.0 --no-confirm
 
       - name: Configure sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
