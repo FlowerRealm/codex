@@ -6,6 +6,9 @@ on:
       - main
   workflow_dispatch:
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 # CI builds in debug (dev) for faster signal.
 
 jobs:
@@ -193,18 +196,17 @@ jobs:
 
       - name: Export sccache GitHub cache environment
         if: ${{ env.USE_SCCACHE == 'true' }}
-        shell: bash
-        run: |
-          {
-            echo "ACTIONS_RESULTS_URL=${ACTIONS_RESULTS_URL:-}"
-            echo "ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN:-}"
-          } >> "$GITHUB_ENV"
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Install sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
-        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        uses: mozilla-actions/sccache-action@v0.0.9
         with:
-          tool: sccache@0.14.0
+          version: v0.14.0
 
       - name: Configure sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
@@ -420,18 +422,17 @@ jobs:
 
       - name: Export sccache GitHub cache environment
         if: ${{ env.USE_SCCACHE == 'true' }}
-        shell: bash
-        run: |
-          {
-            echo "ACTIONS_RESULTS_URL=${ACTIONS_RESULTS_URL:-}"
-            echo "ACTIONS_RUNTIME_TOKEN=${ACTIONS_RUNTIME_TOKEN:-}"
-          } >> "$GITHUB_ENV"
+        uses: actions/github-script@v8
+        with:
+          script: |
+            core.exportVariable('ACTIONS_RESULTS_URL', process.env.ACTIONS_RESULTS_URL || '');
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', process.env.ACTIONS_RUNTIME_TOKEN || '');
 
       - name: Install sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
-        uses: taiki-e/install-action@44c6d64aa62cd779e873306675c7a58e86d6d532 # v2
+        uses: mozilla-actions/sccache-action@v0.0.9
         with:
-          tool: sccache@0.14.0
+          version: v0.14.0
 
       - name: Configure sccache
         if: ${{ env.USE_SCCACHE == 'true' }}
