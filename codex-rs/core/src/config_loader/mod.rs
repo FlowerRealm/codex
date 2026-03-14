@@ -819,12 +819,13 @@ async fn load_project_layers(
 
     let mut layers = Vec::new();
     for dir in dirs {
-        let Some(project_config_dir) = prepare_project_config_dir(dir).await? else {
-            continue;
-        };
-
         let layer_dir = AbsolutePathBuf::from_absolute_path(dir)?;
         let decision = trust_context.decision_for_dir(&layer_dir);
+        let Some(project_config_dir) =
+            prepare_project_config_dir(dir, decision.is_trusted()).await?
+        else {
+            continue;
+        };
         let project_config_abs = AbsolutePathBuf::from_absolute_path(&project_config_dir)?;
         let project_config_normalized = normalize_path(project_config_abs.as_path())
             .unwrap_or_else(|_| project_config_abs.to_path_buf());
@@ -895,7 +896,10 @@ async fn load_project_layers(
     Ok(layers)
 }
 
-async fn prepare_project_config_dir(dir: &Path) -> io::Result<Option<std::path::PathBuf>> {
+async fn prepare_project_config_dir(
+    dir: &Path,
+    allow_migration: bool,
+) -> io::Result<Option<std::path::PathBuf>> {
     let project_config_dir = dir.join(PROJECT_CONFIG_DIR_NAME);
     if tokio::fs::metadata(&project_config_dir)
         .await
@@ -912,6 +916,10 @@ async fn prepare_project_config_dir(dir: &Path) -> io::Result<Option<std::path::
         .unwrap_or(false)
     {
         return Ok(None);
+    }
+
+    if !allow_migration {
+        return Ok(Some(legacy_project_config_dir));
     }
 
     let legacy_project_config_dir_for_copy = legacy_project_config_dir.clone();

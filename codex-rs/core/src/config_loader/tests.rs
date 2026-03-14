@@ -1339,6 +1339,70 @@ async fn project_layers_disabled_when_untrusted_or_unknown() -> std::io::Result<
 }
 
 #[tokio::test]
+async fn legacy_project_dot_codex_is_not_migrated_for_untrusted_project() -> std::io::Result<()> {
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    tokio::fs::create_dir_all(nested.join(LEGACY_PROJECT_CONFIG_DIR_NAME)).await?;
+    tokio::fs::write(
+        nested
+            .join(LEGACY_PROJECT_CONFIG_DIR_NAME)
+            .join(CONFIG_TOML_FILE),
+        "foo = \"child\"\n",
+    )
+    .await?;
+
+    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
+    let codex_home = tmp.path().join("home_untrusted");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    make_config_for_test(&codex_home, &project_root, TrustLevel::Untrusted, None).await?;
+    let user_config_path = codex_home.join(CONFIG_TOML_FILE);
+    let user_config_contents = tokio::fs::read_to_string(&user_config_path).await?;
+    tokio::fs::write(
+        &user_config_path,
+        format!("foo = \"user\"\n{user_config_contents}"),
+    )
+    .await?;
+
+    let layers = load_config_layers_state(
+        &codex_home,
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+        CloudRequirementsLoader::default(),
+    )
+    .await?;
+
+    let project_layers: Vec<_> = layers
+        .get_layers(
+            super::ConfigLayerStackOrdering::HighestPrecedenceFirst,
+            true,
+        )
+        .into_iter()
+        .filter(|layer| matches!(layer.name, super::ConfigLayerSource::Project { .. }))
+        .collect();
+    assert_eq!(project_layers.len(), 1);
+    assert!(
+        project_layers[0].disabled_reason.is_some(),
+        "expected untrusted legacy project layer to stay disabled"
+    );
+    assert_eq!(
+        project_layers[0].config.get("foo"),
+        Some(&TomlValue::String("child".to_string()))
+    );
+    assert_eq!(
+        layers.effective_config().get("foo"),
+        Some(&TomlValue::String("user".to_string()))
+    );
+    assert!(
+        !nested.join(PROJECT_CONFIG_DIR_NAME).exists(),
+        "untrusted project should not be migrated from .codex to .realmx"
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn cli_override_can_update_project_local_mcp_server_when_project_is_trusted()
 -> std::io::Result<()> {
     let tmp = tempdir()?;
