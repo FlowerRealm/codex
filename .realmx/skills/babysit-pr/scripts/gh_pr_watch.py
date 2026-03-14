@@ -786,6 +786,8 @@ def recommend_actions(
             actions.append("stop_exhausted_retries")
         else:
             actions.append("diagnose_ci_failure")
+            if checks_summary["all_terminal"] and failed_runs and retries_used < max_retries:
+                actions.append("retry_failed_checks")
 
     if not actions:
         actions.append("idle")

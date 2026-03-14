@@ -237,7 +237,7 @@ class GhPrWatchTests(unittest.TestCase):
             ["stop_pr_closed"],
         )
 
-    def test_failed_checks_require_diagnosis_before_retry_action(self):
+    def test_failed_checks_expose_diagnosis_and_retry_actions(self):
         pr = {
             "closed": False,
             "merged": False,
@@ -261,7 +261,7 @@ class GhPrWatchTests(unittest.TestCase):
                 0,
                 3,
             ),
-            ["diagnose_ci_failure"],
+            ["diagnose_ci_failure", "retry_failed_checks"],
         )
 
     def test_run_watch_reports_updated_next_poll_seconds_after_backoff(self):
