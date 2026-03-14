@@ -7,15 +7,16 @@ use clap::Parser;
 use codex_state::LogQuery;
 use codex_state::LogRow;
 use codex_state::StateRuntime;
-use dirs::home_dir;
+use codex_utils_home_dir::find_codex_home;
 use owo_colors::OwoColorize;
 
 #[derive(Debug, Parser)]
 #[command(name = "codex-state-logs")]
 #[command(about = "Tail Codex logs from the dedicated logs SQLite DB with simple filters")]
 struct Args {
-    /// Path to CODEX_HOME. Defaults to $CODEX_HOME or ~/.codex.
-    #[arg(long, env = "CODEX_HOME")]
+    /// Path to the Realmx state directory. Defaults to $REALMX_HOME, then
+    /// $CODEX_HOME, then ~/.realmx.
+    #[arg(long, env = "REALMX_HOME")]
     codex_home: Option<PathBuf>,
 
     /// Direct path to the logs SQLite database. Overrides --codex-home.
@@ -112,15 +113,11 @@ fn resolve_db_path(args: &Args) -> anyhow::Result<PathBuf> {
         return Ok(db.clone());
     }
 
-    let codex_home = args.codex_home.clone().unwrap_or_else(default_codex_home);
+    let codex_home = match args.codex_home.clone() {
+        Some(path) => path,
+        None => find_codex_home().context("failed to resolve Realmx home")?,
+    };
     Ok(codex_state::logs_db_path(codex_home.as_path()))
-}
-
-fn default_codex_home() -> PathBuf {
-    if let Some(home) = home_dir() {
-        return home.join(".codex");
-    }
-    PathBuf::from(".codex")
 }
 
 fn build_filter(args: &Args) -> anyhow::Result<LogFilter> {

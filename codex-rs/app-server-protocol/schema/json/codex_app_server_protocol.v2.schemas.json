@@ -3174,7 +3174,7 @@
           "type": "object"
         },
         {
-          "description": "Path to a .codex/ folder within a project. There could be multiple of these between `cwd` and the project/repo root.",
+          "description": "Path to a .realmx/ folder within a project. There could be multiple of these between `cwd` and the project/repo root.",
           "properties": {
             "dotCodexFolder": {
               "$ref": "#/definitions/AbsolutePathBuf"
@@ -3842,7 +3842,7 @@
           ]
         },
         "includeHome": {
-          "description": "If true, include detection under the user's home (~/.claude, ~/.codex, etc.).",
+          "description": "If true, include detection under the user's home (~/.claude, ~/.realmx, etc.).",
           "type": "boolean"
         }
       },

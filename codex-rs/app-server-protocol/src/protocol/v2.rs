@@ -465,7 +465,7 @@ pub enum ConfigLayerSource {
         file: AbsolutePathBuf,
     },
 
-    /// Path to a .codex/ folder within a project. There could be multiple of
+    /// Path to a .realmx/ folder within a project. There could be multiple of
     /// these between `cwd` and the project/repo root.
     #[serde(rename_all = "camelCase")]
     #[ts(rename_all = "camelCase")]
@@ -860,7 +860,7 @@ pub struct ExternalAgentConfigDetectResponse {
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
 pub struct ExternalAgentConfigDetectParams {
-    /// If true, include detection under the user's home (~/.claude, ~/.codex, etc.).
+    /// If true, include detection under the user's home (~/.claude, ~/.realmx, etc.).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub include_home: bool,
     /// Zero or more working directories to include for repo-scoped detection.
@@ -7422,7 +7422,7 @@ mod tests {
                 },
                 CoreUserInput::Skill {
                     name: "skill-creator".to_string(),
-                    path: PathBuf::from("/repo/.codex/skills/skill-creator/SKILL.md"),
+                    path: PathBuf::from("/repo/.realmx/skills/skill-creator/SKILL.md"),
                 },
                 CoreUserInput::Mention {
                     name: "Demo App".to_string(),
@@ -7448,7 +7448,7 @@ mod tests {
                     },
                     UserInput::Skill {
                         name: "skill-creator".to_string(),
-                        path: PathBuf::from("/repo/.codex/skills/skill-creator/SKILL.md"),
+                        path: PathBuf::from("/repo/.realmx/skills/skill-creator/SKILL.md"),
                     },
                     UserInput::Mention {
                         name: "Demo App".to_string(),

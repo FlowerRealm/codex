@@ -702,7 +702,7 @@
     },
     "History": {
       "additionalProperties": false,
-      "description": "Settings that govern if and what will be written to `~/.codex/history.jsonl`.",
+      "description": "Settings that govern if and what will be written to `~/.realmx/history.jsonl`.",
       "properties": {
         "max_bytes": {
           "description": "If set, the maximum size of the history file in bytes. The oldest entries are dropped once the file exceeds this limit.",
@@ -1754,7 +1754,7 @@
       ]
     }
   },
-  "description": "Base config deserialized from ~/.codex/config.toml.",
+  "description": "Base config deserialized from ~/.realmx/config.toml.",
   "properties": {
     "agents": {
       "allOf": [
@@ -2124,7 +2124,7 @@
         }
       ],
       "default": null,
-      "description": "Settings that govern if and what will be written to `~/.codex/history.jsonl`."
+      "description": "Settings that govern if and what will be written to `~/.realmx/history.jsonl`."
     },
     "instructions": {
       "description": "System instructions.",
@@ -2335,7 +2335,7 @@
     },
     "project_root_markers": {
       "default": null,
-      "description": "Markers used to detect the project root when searching parent directories for `.codex` folders. Defaults to [\".git\"] when unset.",
+      "description": "Markers used to detect the project root when searching parent directories for `.realmx` folders. Defaults to [\".git\"] when unset.",
       "items": {
         "type": "string"
       },

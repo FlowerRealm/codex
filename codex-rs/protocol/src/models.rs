@@ -1994,6 +1994,7 @@ mod tests {
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
             AskForApproval::UnlessTrusted,
+            false,
             &Policy::empty(),
             None,
             false,
@@ -2011,6 +2012,7 @@ mod tests {
             SandboxMode::WorkspaceWrite,
             NetworkAccess::Enabled,
             AskForApproval::OnFailure,
+            false,
             &Policy::empty(),
             None,
             false,
@@ -2265,7 +2267,7 @@ mod tests {
 
     #[test]
     fn granular_policy_lists_request_permissions_category_without_tool_section_when_tool_is_unavailable()
-    {
+     {
         let text = DeveloperInstructions::from(
             AskForApproval::Granular(GranularApprovalConfig {
                 sandbox_approval: false,

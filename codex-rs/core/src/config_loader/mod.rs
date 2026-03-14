@@ -11,6 +11,8 @@ use crate::git_info::resolve_root_git_project_for_trust;
 use codex_app_server_protocol::ConfigLayerSource;
 use codex_config::CONFIG_TOML_FILE;
 use codex_config::ConfigRequirementsWithSources;
+use codex_config::LEGACY_PROJECT_CONFIG_DIR_NAME;
+use codex_config::PROJECT_CONFIG_DIR_NAME;
 use codex_protocol::config_types::SandboxMode;
 use codex_protocol::config_types::TrustLevel;
 use codex_protocol::protocol::AskForApproval;
@@ -99,8 +101,8 @@ pub(crate) async fn first_layer_config_error_from_entries(
 ///   `%ProgramData%\OpenAI\Codex\config.toml` (Windows)
 /// - user      `${CODEX_HOME}/config.toml`
 /// - cwd       `${PWD}/config.toml` (loaded but disabled when the directory is untrusted)
-/// - tree      parent directories up to root looking for `./.codex/config.toml` (loaded but disabled when untrusted)
-/// - repo      `$(git rev-parse --show-toplevel)/.codex/config.toml` (loaded but disabled when untrusted)
+/// - tree      parent directories up to root looking for `./.realmx/config.toml` (loaded but disabled when untrusted)
+/// - repo      `$(git rev-parse --show-toplevel)/.realmx/config.toml` (loaded but disabled when untrusted)
 /// - runtime   e.g., --config flags, model selector in UI
 ///
 /// (*) Only available on macOS via managed device profiles.
@@ -651,13 +653,13 @@ impl ProjectTrustContext {
 
 fn project_layer_entry(
     trust_context: &ProjectTrustContext,
-    dot_codex_folder: &AbsolutePathBuf,
+    project_config_folder: &AbsolutePathBuf,
     layer_dir: &AbsolutePathBuf,
     config: TomlValue,
     config_toml_exists: bool,
 ) -> ConfigLayerEntry {
     let source = ConfigLayerSource::Project {
-        dot_codex_folder: dot_codex_folder.clone(),
+        dot_codex_folder: project_config_folder.clone(),
     };
 
     if config_toml_exists && let Some(reason) = trust_context.disabled_reason_for_dir(layer_dir) {
@@ -816,24 +818,21 @@ async fn load_project_layers(
 
     let mut layers = Vec::new();
     for dir in dirs {
-        let dot_codex = dir.join(".codex");
-        if !tokio::fs::metadata(&dot_codex)
-            .await
-            .map(|meta| meta.is_dir())
-            .unwrap_or(false)
-        {
+        let Some(project_config_dir) = prepare_project_config_dir(dir).await? else {
             continue;
-        }
+        };
 
         let layer_dir = AbsolutePathBuf::from_absolute_path(dir)?;
         let decision = trust_context.decision_for_dir(&layer_dir);
-        let dot_codex_abs = AbsolutePathBuf::from_absolute_path(&dot_codex)?;
-        let dot_codex_normalized =
-            normalize_path(dot_codex_abs.as_path()).unwrap_or_else(|_| dot_codex_abs.to_path_buf());
-        if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {
+        let project_config_abs = AbsolutePathBuf::from_absolute_path(&project_config_dir)?;
+        let project_config_normalized = normalize_path(project_config_abs.as_path())
+            .unwrap_or_else(|_| project_config_abs.to_path_buf());
+        if project_config_abs == codex_home_abs
+            || project_config_normalized == codex_home_normalized
+        {
             continue;
         }
-        let config_file = dot_codex_abs.join(CONFIG_TOML_FILE)?;
+        let config_file = project_config_abs.join(CONFIG_TOML_FILE)?;
         match tokio::fs::read_to_string(&config_file).await {
             Ok(contents) => {
                 let config: TomlValue = match toml::from_str(&contents) {
@@ -850,7 +849,7 @@ async fn load_project_layers(
                         }
                         layers.push(project_layer_entry(
                             trust_context,
-                            &dot_codex_abs,
+                            &project_config_abs,
                             &layer_dir,
                             TomlValue::Table(toml::map::Map::new()),
                             true,
@@ -859,9 +858,14 @@ async fn load_project_layers(
                     }
                 };
                 let config =
-                    resolve_relative_paths_in_config_toml(config, dot_codex_abs.as_path())?;
-                let entry =
-                    project_layer_entry(trust_context, &dot_codex_abs, &layer_dir, config, true);
+                    resolve_relative_paths_in_config_toml(config, project_config_abs.as_path())?;
+                let entry = project_layer_entry(
+                    trust_context,
+                    &project_config_abs,
+                    &layer_dir,
+                    config,
+                    true,
+                );
                 layers.push(entry);
             }
             Err(err) => {
@@ -871,7 +875,7 @@ async fn load_project_layers(
                     // that are significant in the overall ConfigLayerStack.
                     layers.push(project_layer_entry(
                         trust_context,
-                        &dot_codex_abs,
+                        &project_config_abs,
                         &layer_dir,
                         TomlValue::Table(toml::map::Map::new()),
                         false,
@@ -888,6 +892,48 @@ async fn load_project_layers(
     }
 
     Ok(layers)
+}
+
+async fn prepare_project_config_dir(dir: &Path) -> io::Result<Option<std::path::PathBuf>> {
+    let project_config_dir = dir.join(PROJECT_CONFIG_DIR_NAME);
+    if tokio::fs::metadata(&project_config_dir)
+        .await
+        .map(|meta| meta.is_dir())
+        .unwrap_or(false)
+    {
+        return Ok(Some(project_config_dir));
+    }
+
+    let legacy_project_config_dir = dir.join(LEGACY_PROJECT_CONFIG_DIR_NAME);
+    if !tokio::fs::metadata(&legacy_project_config_dir)
+        .await
+        .map(|meta| meta.is_dir())
+        .unwrap_or(false)
+    {
+        return Ok(None);
+    }
+
+    copy_dir_recursive(&legacy_project_config_dir, &project_config_dir).await?;
+    Ok(Some(project_config_dir))
+}
+
+async fn copy_dir_recursive(source: &Path, target: &Path) -> io::Result<()> {
+    tokio::fs::create_dir_all(target).await?;
+    let mut entries = tokio::fs::read_dir(source).await?;
+
+    while let Some(entry) = entries.next_entry().await? {
+        let source_path = entry.path();
+        let target_path = target.join(entry.file_name());
+        let file_type = entry.file_type().await?;
+
+        if file_type.is_dir() {
+            Box::pin(copy_dir_recursive(&source_path, &target_path)).await?;
+        } else if file_type.is_file() {
+            tokio::fs::copy(&source_path, &target_path).await?;
+        }
+    }
+
+    Ok(())
 }
 
 /// The legacy mechanism for specifying admin-enforced configuration is to read

@@ -428,7 +428,7 @@ async fn sandbox_blocks_nc() {
 }
 
 #[tokio::test]
-async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
+async fn sandbox_blocks_git_and_config_dir_writes_inside_writable_root() {
     if should_skip_bwrap_tests().await {
         eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
         return;
@@ -436,11 +436,14 @@ async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
 
     let tmpdir = tempfile::tempdir().expect("tempdir");
     let dot_git = tmpdir.path().join(".git");
+    let dot_realmx = tmpdir.path().join(".realmx");
     let dot_codex = tmpdir.path().join(".codex");
     std::fs::create_dir_all(&dot_git).expect("create .git");
+    std::fs::create_dir_all(&dot_realmx).expect("create .realmx");
     std::fs::create_dir_all(&dot_codex).expect("create .codex");
 
     let git_target = dot_git.join("config");
+    let realmx_target = dot_realmx.join("config.toml");
     let codex_target = dot_codex.join("config.toml");
 
     let git_output = expect_denied(
@@ -459,6 +462,22 @@ async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
         ".git write should be denied under bubblewrap",
     );
 
+    let realmx_output = expect_denied(
+        run_cmd_result_with_writable_roots(
+            &[
+                "bash",
+                "-lc",
+                &format!("echo denied > {}", realmx_target.to_string_lossy()),
+            ],
+            &[tmpdir.path().to_path_buf()],
+            LONG_TIMEOUT_MS,
+            false,
+            true,
+        )
+        .await,
+        ".realmx write should be denied under bubblewrap",
+    );
+
     let codex_output = expect_denied(
         run_cmd_result_with_writable_roots(
             &[
@@ -472,14 +491,15 @@ async fn sandbox_blocks_git_and_codex_writes_inside_writable_root() {
             true,
         )
         .await,
-        ".codex write should be denied under bubblewrap",
+        "legacy .codex write should be denied under bubblewrap",
     );
     assert_ne!(git_output.exit_code, 0);
+    assert_ne!(realmx_output.exit_code, 0);
     assert_ne!(codex_output.exit_code, 0);
 }
 
 #[tokio::test]
-async fn sandbox_blocks_codex_symlink_replacement_attack() {
+async fn sandbox_blocks_config_dir_symlink_replacement_attack() {
     if should_skip_bwrap_tests().await {
         eprintln!("skipping bwrap test: bwrap sandbox prerequisites are unavailable");
         return;
@@ -488,20 +508,20 @@ async fn sandbox_blocks_codex_symlink_replacement_attack() {
     use std::os::unix::fs::symlink;
 
     let tmpdir = tempfile::tempdir().expect("tempdir");
-    let decoy = tmpdir.path().join("decoy-codex");
+    let decoy = tmpdir.path().join("decoy-config-dir");
     std::fs::create_dir_all(&decoy).expect("create decoy dir");
 
-    let dot_codex = tmpdir.path().join(".codex");
-    symlink(&decoy, &dot_codex).expect("create .codex symlink");
+    let dot_realmx = tmpdir.path().join(".realmx");
+    symlink(&decoy, &dot_realmx).expect("create .realmx symlink");
 
-    let codex_target = dot_codex.join("config.toml");
+    let realmx_target = dot_realmx.join("config.toml");
 
-    let codex_output = expect_denied(
+    let realmx_output = expect_denied(
         run_cmd_result_with_writable_roots(
             &[
                 "bash",
                 "-lc",
-                &format!("echo denied > {}", codex_target.to_string_lossy()),
+                &format!("echo denied > {}", realmx_target.to_string_lossy()),
             ],
             &[tmpdir.path().to_path_buf()],
             LONG_TIMEOUT_MS,
@@ -509,9 +529,9 @@ async fn sandbox_blocks_codex_symlink_replacement_attack() {
             true,
         )
         .await,
-        ".codex symlink replacement should be denied",
+        ".realmx symlink replacement should be denied",
     );
-    assert_ne!(codex_output.exit_code, 0);
+    assert_ne!(realmx_output.exit_code, 0);
 }
 
 #[tokio::test]

@@ -288,7 +288,7 @@ pub struct Config {
     /// appends one extra argument containing a JSON payload describing the
     /// event.
     ///
-    /// Example `~/.codex/config.toml` snippet:
+    /// Example `~/.realmx/config.toml` snippet:
     ///
     /// ```toml
     /// notify = ["notify-send", "Codex"]
@@ -399,8 +399,8 @@ pub struct Config {
     /// Memories subsystem settings.
     pub memories: MemoriesConfig,
 
-    /// Directory containing all Codex state (defaults to `~/.codex` but can be
-    /// overridden by the `CODEX_HOME` environment variable).
+    /// Directory containing all Codex state (defaults to `~/.realmx` but can be
+    /// overridden by `REALMX_HOME` or legacy `CODEX_HOME`).
     pub codex_home: PathBuf,
 
     /// Directory where Codex stores the SQLite state DB.
@@ -409,7 +409,7 @@ pub struct Config {
     /// Directory where Codex writes log files (defaults to `$CODEX_HOME/log`).
     pub log_dir: PathBuf,
 
-    /// Settings that govern if and what will be written to `~/.codex/history.jsonl`.
+    /// Settings that govern if and what will be written to `~/.realmx/history.jsonl`.
     pub history: History,
 
     /// When true, session is not persisted on disk. Default to `false`
@@ -989,7 +989,7 @@ pub async fn load_global_mcp_servers(
     // result.
     let cli_overrides = Vec::<(String, TomlValue)>::new();
     // There is no cwd/project context for this query, so this will not include
-    // MCP servers defined in in-repo .codex/ folders.
+    // MCP servers defined in in-repo .realmx/ folders.
     let cwd: Option<AbsolutePathBuf> = None;
     let config_layer_stack = load_config_layers_state(
         codex_home,
@@ -1102,7 +1102,7 @@ pub(crate) fn set_project_trust_level_inner(
     Ok(())
 }
 
-/// Patch `CODEX_HOME/config.toml` project state to set trust level.
+/// Patch the resolved home `config.toml` project state to set trust level.
 /// Use with caution.
 pub fn set_project_trust_level(
     codex_home: &Path,
@@ -1151,7 +1151,7 @@ pub fn set_default_oss_provider(codex_home: &Path, provider: &str) -> std::io::R
         .map_err(|err| std::io::Error::other(format!("failed to persist config.toml: {err}")))
 }
 
-/// Base config deserialized from ~/.codex/config.toml.
+/// Base config deserialized from ~/.realmx/config.toml.
 #[derive(Serialize, Deserialize, Debug, Clone, Default, PartialEq, JsonSchema)]
 #[schemars(deny_unknown_fields)]
 pub struct ConfigToml {
@@ -1302,7 +1302,7 @@ pub struct ConfigToml {
     #[serde(default)]
     pub profiles: HashMap<String, ConfigProfile>,
 
-    /// Settings that govern if and what will be written to `~/.codex/history.jsonl`.
+    /// Settings that govern if and what will be written to `~/.realmx/history.jsonl`.
     #[serde(default)]
     pub history: Option<History>,
 
@@ -1417,7 +1417,7 @@ pub struct ConfigToml {
     pub ghost_snapshot: Option<GhostSnapshotToml>,
 
     /// Markers used to detect the project root when searching parent
-    /// directories for `.codex` folders. Defaults to [".git"] when unset.
+    /// directories for `.realmx` folders. Defaults to [".git"] when unset.
     #[serde(default)]
     pub project_root_markers: Option<Vec<String>>,
 
@@ -2878,14 +2878,18 @@ fn toml_uses_deprecated_instructions_file(value: &TomlValue) -> bool {
     })
 }
 
-/// Returns the path to the Codex configuration directory, which can be
-/// specified by the `CODEX_HOME` environment variable. If not set, defaults to
-/// `~/.codex`.
+/// Returns the path to the Realmx configuration directory.
 ///
-/// - If `CODEX_HOME` is set, the value must exist and be a directory. The
-///   value will be canonicalized and this function will Err otherwise.
-/// - If `CODEX_HOME` is not set, this function does not verify that the
-///   directory exists.
+/// Resolution order:
+/// 1. `REALMX_HOME`
+/// 2. `CODEX_HOME`
+/// 3. `~/.realmx` by default, copying `~/.codex` into place once when needed
+///
+/// - If an environment variable is set, the value must exist and be a
+///   directory. The value will be canonicalized and this function will Err
+///   otherwise.
+/// - If no environment variable is set, this function may create `~/.realmx`
+///   by copying the legacy `~/.codex` directory.
 pub fn find_codex_home() -> std::io::Result<PathBuf> {
     codex_utils_home_dir::find_codex_home()
 }

@@ -1,7 +1,7 @@
 use crate::config::types::McpServerConfig;
 use crate::config::types::Notice;
-use crate::model_provider_info::ModelProviderInfo;
 use crate::features::FEATURES;
+use crate::model_provider_info::ModelProviderInfo;
 use crate::path_utils::resolve_symlink_write_paths;
 use crate::path_utils::write_atomically;
 use anyhow::Context;

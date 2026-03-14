@@ -27,6 +27,7 @@ use wiremock::matchers::path;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const TEST_CURATED_PLUGIN_SHA: &str = "0123456789abcdef0123456789abcdef01234567";
+const PROJECT_CONFIG_DIR_NAME: &str = ".realmx";
 
 #[tokio::test]
 async fn plugin_list_returns_invalid_request_for_invalid_marketplace_file() -> Result<()> {
@@ -313,9 +314,12 @@ enabled = true
   ]
 }"#,
     )?;
-    std::fs::create_dir_all(workspace_enabled.path().join(".codex"))?;
+    std::fs::create_dir_all(workspace_enabled.path().join(PROJECT_CONFIG_DIR_NAME))?;
     std::fs::write(
-        workspace_enabled.path().join(".codex/config.toml"),
+        workspace_enabled
+            .path()
+            .join(PROJECT_CONFIG_DIR_NAME)
+            .join("config.toml"),
         r#"[plugins."shared-plugin@codex-curated"]
 enabled = false
 "#,

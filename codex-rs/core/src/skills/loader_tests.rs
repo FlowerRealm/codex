@@ -23,7 +23,7 @@ use std::path::Path;
 use tempfile::TempDir;
 use toml::Value as TomlValue;
 
-const REPO_ROOT_CONFIG_DIR_NAME: &str = ".codex";
+const REPO_ROOT_CONFIG_DIR_NAME: &str = codex_config::PROJECT_CONFIG_DIR_NAME;
 
 async fn make_config(codex_home: &TempDir) -> Config {
     make_config_for_cwd(codex_home, codex_home.path().to_path_buf()).await
@@ -148,7 +148,7 @@ fn skill_roots_from_layer_stack_includes_disabled_project_layers() -> anyhow::Re
     fs::create_dir_all(&user_folder)?;
 
     let project_root = tmp.path().join("repo");
-    let dot_codex = project_root.join(".codex");
+    let dot_codex = project_root.join(REPO_ROOT_CONFIG_DIR_NAME);
     fs::create_dir_all(&dot_codex)?;
 
     let user_file = AbsolutePathBuf::from_absolute_path(user_folder.join("config.toml"))?;

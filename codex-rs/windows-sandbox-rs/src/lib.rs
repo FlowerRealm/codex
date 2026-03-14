@@ -138,6 +138,8 @@ pub use workspace_acl::is_command_cwd_root;
 pub use workspace_acl::protect_workspace_agents_dir;
 #[cfg(target_os = "windows")]
 pub use workspace_acl::protect_workspace_codex_dir;
+#[cfg(target_os = "windows")]
+pub use workspace_acl::protect_workspace_legacy_codex_dir;
 
 #[cfg(not(target_os = "windows"))]
 pub use stub::apply_world_writable_scan_and_denies;

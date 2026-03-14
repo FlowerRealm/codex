@@ -61,10 +61,10 @@ cargo test --all-features
 
 Realmx is written in Rust, so it honors the `RUST_LOG` environment variable to configure its logging behavior.
 
-The TUI defaults to `RUST_LOG=codex_core=info,codex_tui=info,codex_rmcp_client=info` and log messages are written to `~/.codex/log/codex-tui.log` by default. For a single run, you can override the log directory with `-c log_dir=...` (for example, `-c log_dir=./.codex-log`).
+The TUI defaults to `RUST_LOG=codex_core=info,codex_tui=info,codex_rmcp_client=info` and log messages are written to `~/.realmx/log/codex-tui.log` by default. For a single run, you can override the log directory with `-c log_dir=...` (for example, `-c log_dir=./.realmx-log`).
 
 ```bash
-tail -F ~/.codex/log/codex-tui.log
+tail -F ~/.realmx/log/codex-tui.log
 ```
 
 By comparison, the non-interactive mode (`realmx exec`, or `codex exec` for compatibility) defaults to `RUST_LOG=error`, but messages are printed inline, so there is no need to monitor a separate file.

@@ -439,9 +439,9 @@ mod tests {
             absolute_path("/etc/codex/config.toml")
         };
         let project_folder = if cfg!(windows) {
-            absolute_path("C:\\repo\\.codex")
+            absolute_path("C:\\repo\\.realmx")
         } else {
-            absolute_path("/repo/.codex")
+            absolute_path("/repo/.realmx")
         };
 
         let layers = vec![
@@ -541,9 +541,9 @@ mod tests {
         };
 
         let user_file = if cfg!(windows) {
-            absolute_path("C:\\users\\alice\\.codex\\config.toml")
+            absolute_path("C:\\users\\alice\\.realmx\\config.toml")
         } else {
-            absolute_path("/home/alice/.codex/config.toml")
+            absolute_path("/home/alice/.realmx/config.toml")
         };
         let stack = ConfigLayerStack::new(
             vec![ConfigLayerEntry::new(

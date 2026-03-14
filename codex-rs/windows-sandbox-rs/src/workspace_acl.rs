@@ -1,6 +1,8 @@
 use crate::acl::add_deny_write_ace;
 use crate::path_normalization::canonicalize_path;
 use anyhow::Result;
+use codex_config::LEGACY_PROJECT_CONFIG_DIR_NAME;
+use codex_config::PROJECT_CONFIG_DIR_NAME;
 use std::ffi::c_void;
 use std::path::Path;
 
@@ -11,7 +13,13 @@ pub fn is_command_cwd_root(root: &Path, canonical_command_cwd: &Path) -> bool {
 /// # Safety
 /// Caller must ensure `psid` is a valid SID pointer.
 pub unsafe fn protect_workspace_codex_dir(cwd: &Path, psid: *mut c_void) -> Result<bool> {
-    protect_workspace_subdir(cwd, psid, ".codex")
+    protect_workspace_subdir(cwd, psid, PROJECT_CONFIG_DIR_NAME)
+}
+
+/// # Safety
+/// Caller must ensure `psid` is a valid SID pointer.
+pub unsafe fn protect_workspace_legacy_codex_dir(cwd: &Path, psid: *mut c_void) -> Result<bool> {
+    protect_workspace_subdir(cwd, psid, LEGACY_PROJECT_CONFIG_DIR_NAME)
 }
 
 /// # Safety

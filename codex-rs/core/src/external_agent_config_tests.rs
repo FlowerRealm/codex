@@ -5,7 +5,7 @@ use tempfile::TempDir;
 fn fixture_paths() -> (TempDir, PathBuf, PathBuf) {
     let root = TempDir::new().expect("create tempdir");
     let claude_home = root.path().join(".claude");
-    let codex_home = root.path().join(".codex");
+    let codex_home = root.path().join(".realmx");
     (root, claude_home, codex_home)
 }
 
@@ -77,7 +77,7 @@ fn detect_repo_lists_agents_md_for_each_cwd() {
     fs::create_dir_all(&nested).expect("create nested");
     fs::write(repo_root.join("CLAUDE.md"), "Claude code guidance").expect("write source");
 
-    let items = service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    let items = service_for_paths(root.path().join(".claude"), root.path().join(".realmx"))
         .detect(ExternalAgentConfigDetectOptions {
             include_home: false,
             cwds: Some(vec![nested, repo_root.clone()]),
@@ -258,7 +258,7 @@ fn import_repo_agents_md_rewrites_terms_and_skips_non_empty_targets() {
     )
     .expect("write target");
 
-    service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    service_for_paths(root.path().join(".claude"), root.path().join(".realmx"))
         .import(vec![
             ExternalAgentConfigMigrationItem {
                 item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
@@ -292,7 +292,7 @@ fn import_repo_agents_md_overwrites_empty_targets() {
     fs::write(repo_root.join("CLAUDE.md"), "Claude code guidance").expect("write source");
     fs::write(repo_root.join("AGENTS.md"), " \n\t").expect("write empty target");
 
-    service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    service_for_paths(root.path().join(".claude"), root.path().join(".realmx"))
         .import(vec![ExternalAgentConfigMigrationItem {
             item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
             description: String::new(),
@@ -319,7 +319,7 @@ fn detect_repo_prefers_non_empty_dot_claude_agents_source() {
     )
     .expect("write dot claude source");
 
-    let items = service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    let items = service_for_paths(root.path().join(".claude"), root.path().join(".realmx"))
         .detect(ExternalAgentConfigDetectOptions {
             include_home: false,
             cwds: Some(vec![repo_root.clone()]),
@@ -353,7 +353,7 @@ fn import_repo_uses_non_empty_dot_claude_agents_source() {
     )
     .expect("write dot claude source");
 
-    service_for_paths(root.path().join(".claude"), root.path().join(".codex"))
+    service_for_paths(root.path().join(".claude"), root.path().join(".realmx"))
         .import(vec![ExternalAgentConfigMigrationItem {
             item_type: ExternalAgentConfigMigrationItemType::AgentsMd,
             description: String::new(),

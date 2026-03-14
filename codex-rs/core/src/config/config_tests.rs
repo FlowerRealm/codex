@@ -15,6 +15,7 @@ use crate::config_loader::RequirementSource;
 use crate::features::Feature;
 use assert_matches::assert_matches;
 use codex_config::CONFIG_TOML_FILE;
+use codex_config::PROJECT_CONFIG_DIR_NAME;
 use codex_protocol::permissions::FileSystemAccessMode;
 use codex_protocol::permissions::FileSystemPath;
 use codex_protocol::permissions::FileSystemSandboxEntry;
@@ -1553,7 +1554,7 @@ trust_level = "trusted"
 "#,
         ),
     )?;
-    let project_config_dir = workspace.path().join(".codex");
+    let project_config_dir = workspace.path().join(PROJECT_CONFIG_DIR_NAME);
     std::fs::create_dir_all(&project_config_dir)?;
     std::fs::write(
         project_config_dir.join(CONFIG_TOML_FILE),
@@ -3147,7 +3148,10 @@ trust_level = "trusted"
     )
     .await?;
 
-    let standalone_agents_dir = repo_root.path().join(".codex").join("agents");
+    let standalone_agents_dir = repo_root
+        .path()
+        .join(PROJECT_CONFIG_DIR_NAME)
+        .join("agents");
     tokio::fs::create_dir_all(&standalone_agents_dir).await?;
     tokio::fs::write(
         standalone_agents_dir.join("researcher.toml"),
@@ -3318,7 +3322,10 @@ trust_level = "trusted"
     )
     .await?;
 
-    let standalone_agents_dir = repo_root.path().join(".codex").join("agents");
+    let standalone_agents_dir = repo_root
+        .path()
+        .join(PROJECT_CONFIG_DIR_NAME)
+        .join("agents");
     tokio::fs::create_dir_all(&standalone_agents_dir).await?;
     tokio::fs::write(
         standalone_agents_dir.join("researcher.toml"),
@@ -3519,7 +3526,7 @@ trust_level = "trusted"
 
     let root_agent = repo_root
         .path()
-        .join(".codex")
+        .join(PROJECT_CONFIG_DIR_NAME)
         .join("agents")
         .join("root.toml");
     std::fs::create_dir_all(
@@ -3539,7 +3546,7 @@ developer_instructions = "Research carefully"
     let nested_agent = repo_root
         .path()
         .join("packages")
-        .join(".codex")
+        .join(PROJECT_CONFIG_DIR_NAME)
         .join("agents")
         .join("review")
         .join("nested.toml");
@@ -3561,7 +3568,7 @@ developer_instructions = "Review carefully"
     let sibling_agent = repo_root
         .path()
         .join("packages")
-        .join(".codex")
+        .join(PROJECT_CONFIG_DIR_NAME)
         .join("agents")
         .join("writer.toml");
     std::fs::create_dir_all(
@@ -3678,7 +3685,10 @@ model = "gpt-4.1"
     )
     .await?;
 
-    let standalone_agents_dir = repo_root.path().join(".codex").join("agents");
+    let standalone_agents_dir = repo_root
+        .path()
+        .join(PROJECT_CONFIG_DIR_NAME)
+        .join("agents");
     tokio::fs::create_dir_all(&standalone_agents_dir).await?;
     tokio::fs::write(
         standalone_agents_dir.join("researcher.toml"),
@@ -3810,7 +3820,10 @@ model = "gpt-5"
     )
     .await?;
 
-    let standalone_agents_dir = repo_root.path().join(".codex").join("agents");
+    let standalone_agents_dir = repo_root
+        .path()
+        .join(PROJECT_CONFIG_DIR_NAME)
+        .join("agents");
     tokio::fs::create_dir_all(&standalone_agents_dir).await?;
     tokio::fs::write(
         standalone_agents_dir.join("researcher.toml"),

@@ -2,7 +2,7 @@
 //!
 //! Providers can be defined in two places:
 //!   1. Built-in defaults compiled into the binary so Codex works out-of-the-box.
-//!   2. User-defined entries inside `~/.codex/config.toml` under the `model_providers`
+//!   2. User-defined entries inside `~/.realmx/config.toml` under the `model_providers`
 //!      key. These extend the defaults at runtime.
 
 use crate::auth::AuthMode;
@@ -242,6 +242,7 @@ impl ModelProviderInfo {
         ModelProviderInfo {
             name: OPENAI_PROVIDER_NAME.into(),
             base_url,
+            api_key: None,
             env_key: None,
             env_key_instructions: None,
             experimental_bearer_token: None,

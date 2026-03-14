@@ -12,6 +12,9 @@ use strum_macros::Display;
 use tracing::error;
 use ts_rs::TS;
 
+const PROJECT_CONFIG_DIR_NAME: &str = ".realmx";
+const LEGACY_PROJECT_CONFIG_DIR_NAME: &str = ".codex";
+
 use crate::protocol::NetworkAccess;
 use crate::protocol::ReadOnlyAccess;
 use crate::protocol::SandboxPolicy;
@@ -956,9 +959,13 @@ fn default_read_only_subpaths_for_writable_root(
         subpaths.push(top_level_git);
     }
 
-    // Make .agents/skills and .codex/config.toml and related files read-only
+    // Make .agents/skills, .realmx, and legacy .codex config files read-only
     // to the agent, by default.
-    for subdir in &[".agents", ".codex"] {
+    for subdir in &[
+        ".agents",
+        PROJECT_CONFIG_DIR_NAME,
+        LEGACY_PROJECT_CONFIG_DIR_NAME,
+    ] {
         #[allow(clippy::expect_used)]
         let top_level_codex = writable_root.join(subdir).expect("valid relative path");
         if top_level_codex.as_path().is_dir() {

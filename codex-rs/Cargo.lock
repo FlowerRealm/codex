@@ -2399,6 +2399,7 @@ dependencies = [
  "chrono",
  "clap",
  "codex-protocol",
+ "codex-utils-home-dir",
  "dirs",
  "log",
  "owo-colors",
@@ -2585,6 +2586,7 @@ version = "0.2.0"
 name = "codex-utils-home-dir"
 version = "0.2.0"
 dependencies = [
+ "codex-config",
  "dirs",
  "pretty_assertions",
  "tempfile",

@@ -10,6 +10,8 @@ use std::path::Path;
 use std::path::PathBuf;
 use windows_sys::Win32::Storage::FileSystem::FILE_ATTRIBUTE_REPARSE_POINT;
 
+const REALMX_HOME_DIR_NAME: &str = ".realmx";
+
 fn junction_name_for_path(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     path.to_string_lossy().hash(&mut hasher);
@@ -18,7 +20,7 @@ fn junction_name_for_path(path: &Path) -> String {
 
 fn junction_root_for_userprofile(userprofile: &str) -> PathBuf {
     PathBuf::from(userprofile)
-        .join(".codex")
+        .join(REALMX_HOME_DIR_NAME)
         .join(".sandbox")
         .join("cwd")
 }
