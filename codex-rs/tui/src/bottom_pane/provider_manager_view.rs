@@ -179,7 +179,7 @@ pub(crate) struct ProviderManagerView {
 
 impl ProviderManagerView {
     pub(crate) fn new(config: &Config, app_event_tx: AppEventSender) -> Self {
-        let builtin_ids: HashSet<String> = built_in_model_providers().keys().cloned().collect();
+        let builtin_ids: HashSet<String> = built_in_model_providers(None).keys().cloned().collect();
         let mut rows: Vec<ProviderRow> = config
             .model_providers
             .iter()
