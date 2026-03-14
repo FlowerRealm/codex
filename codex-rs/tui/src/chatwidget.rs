@@ -5355,8 +5355,6 @@ impl ChatWidget {
             EventMsg::Warning(WarningEvent { message }) => self.on_warning(message),
             EventMsg::SkillUsed(ev) => self.on_skill_used(ev),
             EventMsg::GuardianAssessment(ev) => self.on_guardian_assessment(ev),
-            EventMsg::SkillUsed(ev) => self.on_skill_used(ev),
-            EventMsg::GuardianAssessment(ev) => self.on_guardian_assessment(ev),
             EventMsg::ModelReroute(_) => {}
             EventMsg::Error(ErrorEvent {
                 message,
