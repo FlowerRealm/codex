@@ -180,7 +180,8 @@ def parse_pr_spec(pr_spec):
 def pr_view_fields():
     return (
         "number,url,state,mergedAt,closedAt,headRefName,headRefOid,"
-        "headRepository,headRepositoryOwner,mergeable,mergeStateStatus,reviewDecision"
+        "baseRepository,baseRepositoryOwner,headRepository,headRepositoryOwner,"
+        "mergeable,mergeStateStatus,reviewDecision"
     )
 
 
@@ -226,25 +227,36 @@ def resolve_pr(pr_spec, repo_override=None):
     }
 
 
-def extract_repo_from_pr_view(data):
-    head_repo = data.get("headRepository")
-    head_owner = data.get("headRepositoryOwner")
+def repo_slug_from_pr_view_fields(repository, repository_owner):
     owner = None
     name = None
-    if isinstance(head_owner, dict):
-        owner = head_owner.get("login") or head_owner.get("name")
-    elif isinstance(head_owner, str):
-        owner = head_owner
-    if isinstance(head_repo, dict):
-        name = head_repo.get("name")
-        repo_owner = head_repo.get("owner")
+    if isinstance(repository_owner, dict):
+        owner = repository_owner.get("login") or repository_owner.get("name")
+    elif isinstance(repository_owner, str):
+        owner = repository_owner
+    if isinstance(repository, dict):
+        name = repository.get("name")
+        repo_owner = repository.get("owner")
         if not owner and isinstance(repo_owner, dict):
             owner = repo_owner.get("login") or repo_owner.get("name")
-    elif isinstance(head_repo, str):
-        name = head_repo
+    elif isinstance(repository, str):
+        name = repository
     if owner and name:
         return f"{owner}/{name}"
     return None
+
+
+def extract_repo_from_pr_view(data):
+    return (
+        repo_slug_from_pr_view_fields(
+            data.get("baseRepository"),
+            data.get("baseRepositoryOwner"),
+        )
+        or repo_slug_from_pr_view_fields(
+            data.get("headRepository"),
+            data.get("headRepositoryOwner"),
+        )
+    )
 def extract_repo_from_pr_url(pr_url):
     parsed = urlparse(pr_url)
     parts = [p for p in parsed.path.split("/") if p]
@@ -770,8 +782,6 @@ def recommend_actions(
             actions.append("stop_exhausted_retries")
         else:
             actions.append("diagnose_ci_failure")
-            if checks_summary["all_terminal"] and failed_runs and retries_used < max_retries:
-                actions.append("retry_failed_checks")
 
     if not actions:
         actions.append("idle")

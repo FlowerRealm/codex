@@ -53,6 +53,19 @@ class GhPrWatchTests(unittest.TestCase):
         )[0]
         self.assertTrue(gh_pr_watch.should_surface_review_submission(changes_requested))
 
+    def test_extract_repo_from_pr_view_prefers_base_repository(self):
+        self.assertEqual(
+            gh_pr_watch.extract_repo_from_pr_view(
+                {
+                    "baseRepository": {"name": "codex"},
+                    "baseRepositoryOwner": {"login": "openai"},
+                    "headRepository": {"name": "realmx"},
+                    "headRepositoryOwner": {"login": "FlowerRealm"},
+                }
+            ),
+            "openai/codex",
+        )
+
     def test_extract_unresolved_review_comments_keeps_all_unresolved_reviewer_comments(self):
         review_threads = [
             {
@@ -222,6 +235,33 @@ class GhPrWatchTests(unittest.TestCase):
                 3,
             ),
             ["stop_pr_closed"],
+        )
+
+    def test_failed_checks_require_diagnosis_before_retry_action(self):
+        pr = {
+            "closed": False,
+            "merged": False,
+            "mergeable": "MERGEABLE",
+            "merge_state_status": "CLEAN",
+            "review_decision": "",
+        }
+        checks_summary = {
+            "all_terminal": True,
+            "failed_count": 1,
+            "pending_count": 0,
+        }
+
+        self.assertEqual(
+            gh_pr_watch.recommend_actions(
+                pr,
+                checks_summary,
+                [{"run_id": 123}],
+                [],
+                [],
+                0,
+                3,
+            ),
+            ["diagnose_ci_failure"],
         )
 
     def test_run_watch_reports_updated_next_poll_seconds_after_backoff(self):
