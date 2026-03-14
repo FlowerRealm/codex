@@ -1,6 +1,8 @@
 import sys
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -51,7 +53,7 @@ class GhPrWatchTests(unittest.TestCase):
         )[0]
         self.assertTrue(gh_pr_watch.should_surface_review_submission(changes_requested))
 
-    def test_extract_unresolved_review_comments_uses_latest_trusted_reviewer_comment(self):
+    def test_extract_unresolved_review_comments_keeps_all_unresolved_reviewer_comments(self):
         review_threads = [
             {
                 "id": "THREAD_1",
@@ -77,6 +79,16 @@ class GhPrWatchTests(unittest.TestCase):
                             "path": ".realmx/skills/babysit-pr/scripts/gh_pr_watch.py",
                             "line": 560,
                             "url": "https://example.com/review-comment-12",
+                        },
+                        {
+                            "databaseId": 13,
+                            "author": {"login": "reviewer-member"},
+                            "authorAssociation": "MEMBER",
+                            "body": "There is also an older unresolved point in the same thread.",
+                            "createdAt": "2026-03-14T12:06:00Z",
+                            "path": ".realmx/skills/babysit-pr/scripts/gh_pr_watch.py",
+                            "line": 561,
+                            "url": "https://example.com/review-comment-13",
                         },
                     ]
                 },
@@ -120,6 +132,18 @@ class GhPrWatchTests(unittest.TestCase):
                     "path": ".realmx/skills/babysit-pr/scripts/gh_pr_watch.py",
                     "line": 560,
                     "url": "https://example.com/review-comment-11",
+                },
+                {
+                    "kind": "review_comment",
+                    "id": "13",
+                    "thread_id": "THREAD_1",
+                    "author": "reviewer-member",
+                    "author_association": "MEMBER",
+                    "created_at": "2026-03-14T12:06:00Z",
+                    "body": "There is also an older unresolved point in the same thread.",
+                    "path": ".realmx/skills/babysit-pr/scripts/gh_pr_watch.py",
+                    "line": 561,
+                    "url": "https://example.com/review-comment-13",
                 }
             ],
         )
@@ -199,6 +223,51 @@ class GhPrWatchTests(unittest.TestCase):
             ),
             ["stop_pr_closed"],
         )
+
+    def test_run_watch_reports_updated_next_poll_seconds_after_backoff(self):
+        snapshot = {
+            "pr": {
+                "head_sha": "abc123",
+                "state": "OPEN",
+                "mergeable": "MERGEABLE",
+                "merge_state_status": "CLEAN",
+                "review_decision": "",
+            },
+            "checks": {
+                "all_terminal": True,
+                "failed_count": 0,
+                "pending_count": 0,
+                "passed_count": 1,
+            },
+            "blocking_review_items": [],
+            "actions": ["idle"],
+        }
+        args = SimpleNamespace(poll_seconds=30)
+        events = []
+
+        with (
+            mock.patch.object(
+                gh_pr_watch,
+                "collect_snapshot",
+                side_effect=[(snapshot, "/tmp/state"), (snapshot, "/tmp/state")],
+            ),
+            mock.patch.object(
+                gh_pr_watch,
+                "print_event",
+                side_effect=lambda event, payload: events.append((event, payload)),
+            ),
+            mock.patch.object(
+                gh_pr_watch,
+                "time",
+                wraps=gh_pr_watch.time,
+            ) as mocked_time,
+        ):
+            mocked_time.sleep.side_effect = [None, RuntimeError("stop watch loop")]
+            with self.assertRaisesRegex(RuntimeError, "stop watch loop"):
+                gh_pr_watch.run_watch(args)
+
+        self.assertEqual(events[0][1]["next_poll_seconds"], 30)
+        self.assertEqual(events[1][1]["next_poll_seconds"], 60)
 
 
 if __name__ == "__main__":

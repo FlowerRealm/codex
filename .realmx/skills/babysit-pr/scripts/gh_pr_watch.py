@@ -571,8 +571,7 @@ def extract_unresolved_review_comments(review_threads, authenticated_login=None)
         reviewer_comments.sort(
             key=lambda item: (item.get("created_at") or "", item.get("id") or "")
         )
-        if reviewer_comments:
-            pending.append(reviewer_comments[-1])
+        pending.extend(reviewer_comments)
     pending.sort(
         key=lambda item: (item.get("created_at") or "", item.get("thread_id") or "", item.get("id") or "")
     )
@@ -941,12 +940,20 @@ def run_watch(args):
     last_change_key = None
     while True:
         snapshot, state_path = collect_snapshot(args)
+        current_change_key = snapshot_change_key(snapshot)
+        changed = current_change_key != last_change_key
+        green = is_ci_green(snapshot)
+
+        next_poll_seconds = args.poll_seconds
+        if green and not (changed or last_change_key is None):
+            next_poll_seconds = min(poll_seconds * 2, GREEN_STATE_MAX_POLL_SECONDS)
+
         print_event(
             "snapshot",
             {
                 "snapshot": snapshot,
                 "state_file": str(state_path),
-                "next_poll_seconds": poll_seconds,
+                "next_poll_seconds": next_poll_seconds,
             },
         )
         actions = set(snapshot.get("actions") or [])
@@ -958,18 +965,8 @@ def run_watch(args):
             print_event("stop", {"actions": snapshot.get("actions"), "pr": snapshot.get("pr")})
             return 0
 
-        current_change_key = snapshot_change_key(snapshot)
-        changed = current_change_key != last_change_key
-        green = is_ci_green(snapshot)
-
-        if not green:
-            poll_seconds = args.poll_seconds
-        elif changed or last_change_key is None:
-            poll_seconds = args.poll_seconds
-        else:
-            poll_seconds = min(poll_seconds * 2, GREEN_STATE_MAX_POLL_SECONDS)
-
         last_change_key = current_change_key
+        poll_seconds = next_poll_seconds
         time.sleep(poll_seconds)
 
 
