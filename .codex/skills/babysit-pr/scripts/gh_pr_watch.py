@@ -54,22 +54,35 @@ query($owner: String!, $name: String!, $number: Int!, $after: String) {
         nodes {
           id
           isResolved
-          comments(first: 100) {
-            nodes {
-              id
-              databaseId
-              author {
-                login
-              }
-              authorAssociation
-              body
-              createdAt
-              path
-              line
-              originalLine
-              url
-            }
+        }
+        pageInfo {
+          hasNextPage
+          endCursor
+        }
+      }
+    }
+  }
+}
+"""
+REVIEW_THREAD_COMMENTS_QUERY = """
+query($threadId: ID!, $after: String) {
+  node(id: $threadId) {
+    ... on PullRequestReviewThread {
+      isResolved
+      comments(first: 100, after: $after) {
+        nodes {
+          id
+          databaseId
+          author {
+            login
           }
+          authorAssociation
+          body
+          createdAt
+          path
+          line
+          originalLine
+          url
         }
         pageInfo {
           hasNextPage
@@ -564,37 +577,7 @@ def split_repo_slug(repo):
     return owner, name
 
 
-def extract_unresolved_review_comments(review_threads, authenticated_login=None):
-    pending = []
-    for thread in review_threads:
-        if not isinstance(thread, dict) or thread.get("isResolved"):
-            continue
-        thread_id = thread.get("id") or ""
-        comments = thread.get("comments") or {}
-        nodes = comments.get("nodes") or []
-        reviewer_comments = []
-        for node in nodes:
-            if not isinstance(node, dict):
-                continue
-            item = normalize_review_thread_comment(node, thread_id)
-            if not is_pending_review_author(item, authenticated_login):
-                continue
-            reviewer_comments.append(item)
-        reviewer_comments.sort(
-            key=lambda item: (item.get("created_at") or "", item.get("id") or "")
-        )
-        pending.extend(reviewer_comments)
-    pending.sort(
-        key=lambda item: (
-            item.get("created_at") or "",
-            item.get("thread_id") or "",
-            item.get("id") or "",
-        )
-    )
-    return pending
-
-
-def fetch_pending_review_comments(pr, authenticated_login=None):
+def fetch_review_threads(pr):
     owner, name = split_repo_slug(pr["repo"])
     after = None
     review_threads = []
@@ -630,6 +613,86 @@ def fetch_pending_review_comments(pr, authenticated_login=None):
         after = page_info.get("endCursor")
         if not after:
             break
+    return review_threads
+
+
+def fetch_review_thread_comments(thread_id):
+    after = None
+    comments = []
+    is_resolved = False
+    while True:
+        args = [
+            "api",
+            "graphql",
+            "-f",
+            f"query={REVIEW_THREAD_COMMENTS_QUERY}",
+            "-F",
+            f"threadId={thread_id}",
+        ]
+        if after:
+            args.extend(["-F", f"after={after}"])
+        payload = gh_json(args)
+        if not isinstance(payload, dict):
+            raise GhCommandError("Unexpected payload from review thread comments GraphQL query")
+        data = payload.get("data") or {}
+        node = data.get("node") or {}
+        if not isinstance(node, dict):
+            raise GhCommandError("Expected review thread node payload to be an object")
+        is_resolved = bool(node.get("isResolved"))
+        connection = node.get("comments") or {}
+        nodes = connection.get("nodes") or []
+        if not isinstance(nodes, list):
+            raise GhCommandError("Expected review thread comments.nodes to be a list")
+        comments.extend(nodes)
+        page_info = connection.get("pageInfo") or {}
+        if not page_info.get("hasNextPage"):
+            break
+        after = page_info.get("endCursor")
+        if not after:
+            break
+    return {
+        "id": thread_id,
+        "isResolved": is_resolved,
+        "comments": {"nodes": comments},
+    }
+
+
+def extract_unresolved_review_comments(review_threads, authenticated_login=None):
+    pending = []
+    for thread in review_threads:
+        if not isinstance(thread, dict) or thread.get("isResolved"):
+            continue
+        thread_id = thread.get("id") or ""
+        comments = thread.get("comments") or {}
+        nodes = comments.get("nodes") or []
+        reviewer_comments = []
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            item = normalize_review_thread_comment(node, thread_id)
+            if not is_pending_review_author(item, authenticated_login):
+                continue
+            reviewer_comments.append(item)
+        reviewer_comments.sort(
+            key=lambda item: (item.get("created_at") or "", item.get("id") or "")
+        )
+        pending.extend(reviewer_comments)
+    pending.sort(
+        key=lambda item: (
+            item.get("created_at") or "",
+            item.get("thread_id") or "",
+            item.get("id") or "",
+        )
+    )
+    return pending
+
+
+def fetch_pending_review_comments(pr, authenticated_login=None):
+    review_threads = [
+        fetch_review_thread_comments(str(thread.get("id") or ""))
+        for thread in fetch_review_threads(pr)
+        if str(thread.get("id") or "")
+    ]
     return extract_unresolved_review_comments(review_threads, authenticated_login)
 
 
@@ -723,11 +786,11 @@ def unique_actions(actions):
 
 
 def review_item_identity(item):
-    return (
-        str(item.get("kind") or ""),
-        str(item.get("thread_id") or ""),
-        str(item.get("id") or ""),
-    )
+    kind = str(item.get("kind") or "")
+    item_id = str(item.get("id") or "")
+    if item_id:
+        return (kind, item_id)
+    return (kind, str(item.get("thread_id") or ""))
 
 
 def combine_review_blocking_items(new_review_items, pending_review_comments):

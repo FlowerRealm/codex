@@ -198,6 +198,36 @@ class GhPrWatchTests(unittest.TestCase):
             ["process_review_comment"],
         )
 
+    def test_combine_review_blocking_items_dedupes_same_comment_id_across_sources(self):
+        new_review_items = [
+            {
+                "kind": "review_comment",
+                "id": "11",
+                "thread_id": "",
+            }
+        ]
+        pending_review_comments = [
+            {
+                "kind": "review_comment",
+                "id": "11",
+                "thread_id": "THREAD_1",
+            }
+        ]
+
+        self.assertEqual(
+            gh_pr_watch.combine_review_blocking_items(
+                new_review_items,
+                pending_review_comments,
+            ),
+            [
+                {
+                    "kind": "review_comment",
+                    "id": "11",
+                    "thread_id": "",
+                }
+            ],
+        )
+
     def test_closed_pr_stops_without_review_processing_actions(self):
         pr = {
             "closed": True,
@@ -308,6 +338,60 @@ class GhPrWatchTests(unittest.TestCase):
 
         self.assertEqual(events[0][1]["next_poll_seconds"], 30)
         self.assertEqual(events[1][1]["next_poll_seconds"], 60)
+
+    def test_fetch_review_thread_comments_paginates_until_exhausted(self):
+        with mock.patch.object(
+            gh_pr_watch,
+            "gh_json",
+            side_effect=[
+                {
+                    "data": {
+                        "node": {
+                            "isResolved": False,
+                            "comments": {
+                                "nodes": [
+                                    {
+                                        "databaseId": 11,
+                                        "body": "first",
+                                    }
+                                ],
+                                "pageInfo": {
+                                    "hasNextPage": True,
+                                    "endCursor": "CURSOR_1",
+                                },
+                            },
+                        }
+                    }
+                },
+                {
+                    "data": {
+                        "node": {
+                            "isResolved": False,
+                            "comments": {
+                                "nodes": [
+                                    {
+                                        "databaseId": 12,
+                                        "body": "second",
+                                    }
+                                ],
+                                "pageInfo": {
+                                    "hasNextPage": False,
+                                    "endCursor": None,
+                                },
+                            },
+                        }
+                    }
+                },
+            ],
+        ):
+            thread = gh_pr_watch.fetch_review_thread_comments("THREAD_1")
+
+        self.assertEqual(thread["id"], "THREAD_1")
+        self.assertFalse(thread["isResolved"])
+        self.assertEqual(
+            [comment["databaseId"] for comment in thread["comments"]["nodes"]],
+            [11, 12],
+        )
 
 
 if __name__ == "__main__":
