@@ -18,6 +18,7 @@ use codex_protocol::config_types::TrustLevel;
 use codex_protocol::protocol::AskForApproval;
 use codex_utils_absolute_path::AbsolutePathBuf;
 use codex_utils_absolute_path::AbsolutePathBufGuard;
+use codex_utils_home_dir::migrate_legacy_dir_if_needed;
 use dunce::canonicalize as normalize_path;
 use serde::Deserialize;
 use std::io;
@@ -913,27 +914,21 @@ async fn prepare_project_config_dir(dir: &Path) -> io::Result<Option<std::path::
         return Ok(None);
     }
 
-    copy_dir_recursive(&legacy_project_config_dir, &project_config_dir).await?;
+    let legacy_project_config_dir_for_copy = legacy_project_config_dir.clone();
+    let project_config_dir_for_copy = project_config_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        migrate_legacy_dir_if_needed(
+            &legacy_project_config_dir_for_copy,
+            &project_config_dir_for_copy,
+        )
+    })
+    .await
+    .map_err(|err| {
+        io::Error::other(format!(
+            "failed to migrate legacy project config dir: {err}"
+        ))
+    })??;
     Ok(Some(project_config_dir))
-}
-
-async fn copy_dir_recursive(source: &Path, target: &Path) -> io::Result<()> {
-    tokio::fs::create_dir_all(target).await?;
-    let mut entries = tokio::fs::read_dir(source).await?;
-
-    while let Some(entry) = entries.next_entry().await? {
-        let source_path = entry.path();
-        let target_path = target.join(entry.file_name());
-        let file_type = entry.file_type().await?;
-
-        if file_type.is_dir() {
-            Box::pin(copy_dir_recursive(&source_path, &target_path)).await?;
-        } else if file_type.is_file() {
-            tokio::fs::copy(&source_path, &target_path).await?;
-        }
-    }
-
-    Ok(())
 }
 
 /// The legacy mechanism for specifying admin-enforced configuration is to read

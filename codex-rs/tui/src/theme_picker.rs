@@ -80,6 +80,7 @@ const NARROW_PREVIEW_ROWS: [PreviewRow; 4] = [
         code: "}",
     },
 ];
+#[cfg(test)]
 const REALMX_HOME_DIR_NAME: &str = ".realmx";
 
 /// Wider diff preview used in side-by-side mode.

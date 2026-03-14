@@ -28,6 +28,7 @@ use pretty_assertions::assert_eq;
 use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::path::Path;
+use std::path::PathBuf;
 use tempfile::tempdir;
 use toml::Value as TomlValue;
 
@@ -1105,6 +1106,131 @@ async fn legacy_project_dot_codex_is_migrated_to_realmx() -> std::io::Result<()>
     assert_eq!(
         layers.effective_config().get("foo"),
         Some(&TomlValue::String("child".to_string()))
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn existing_project_dot_realmx_is_not_overwritten_by_legacy_dot_codex() -> std::io::Result<()>
+{
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    tokio::fs::create_dir_all(project_root.join(PROJECT_CONFIG_DIR_NAME)).await?;
+    tokio::fs::create_dir_all(nested.join(PROJECT_CONFIG_DIR_NAME)).await?;
+    tokio::fs::create_dir_all(project_root.join(LEGACY_PROJECT_CONFIG_DIR_NAME)).await?;
+    tokio::fs::create_dir_all(nested.join(LEGACY_PROJECT_CONFIG_DIR_NAME)).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(
+        project_root
+            .join(PROJECT_CONFIG_DIR_NAME)
+            .join(CONFIG_TOML_FILE),
+        "foo = \"root-realmx\"\n",
+    )
+    .await?;
+    tokio::fs::write(
+        nested.join(PROJECT_CONFIG_DIR_NAME).join(CONFIG_TOML_FILE),
+        "foo = \"child-realmx\"\n",
+    )
+    .await?;
+    tokio::fs::write(
+        project_root
+            .join(LEGACY_PROJECT_CONFIG_DIR_NAME)
+            .join(CONFIG_TOML_FILE),
+        "foo = \"root-codex\"\n",
+    )
+    .await?;
+    tokio::fs::write(
+        nested
+            .join(LEGACY_PROJECT_CONFIG_DIR_NAME)
+            .join(CONFIG_TOML_FILE),
+        "foo = \"child-codex\"\n",
+    )
+    .await?;
+    tokio::fs::write(
+        nested
+            .join(LEGACY_PROJECT_CONFIG_DIR_NAME)
+            .join("legacy-only.txt"),
+        "legacy data\n",
+    )
+    .await?;
+
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    make_config_for_test(&codex_home, &project_root, TrustLevel::Trusted, None).await?;
+
+    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
+    let layers = load_config_layers_state(
+        &codex_home,
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+        CloudRequirementsLoader::default(),
+    )
+    .await?;
+
+    assert_eq!(
+        layers.effective_config().get("foo"),
+        Some(&TomlValue::String("child-realmx".to_string()))
+    );
+    assert_eq!(
+        tokio::fs::read_to_string(nested.join(PROJECT_CONFIG_DIR_NAME).join(CONFIG_TOML_FILE))
+            .await?,
+        "foo = \"child-realmx\"\n"
+    );
+    assert!(
+        !nested
+            .join(PROJECT_CONFIG_DIR_NAME)
+            .join("legacy-only.txt")
+            .exists(),
+        "existing .realmx should not be supplemented from legacy .codex"
+    );
+
+    Ok(())
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn legacy_project_dot_codex_migration_copies_symlinks() -> std::io::Result<()> {
+    use std::os::unix::fs::symlink;
+
+    let tmp = tempdir()?;
+    let project_root = tmp.path().join("project");
+    let nested = project_root.join("child");
+    tokio::fs::create_dir_all(nested.join(LEGACY_PROJECT_CONFIG_DIR_NAME)).await?;
+    tokio::fs::write(project_root.join(".git"), "gitdir: here").await?;
+    tokio::fs::write(
+        nested
+            .join(LEGACY_PROJECT_CONFIG_DIR_NAME)
+            .join(CONFIG_TOML_FILE),
+        "foo = \"child\"\n",
+    )
+    .await?;
+    symlink(
+        "config.toml",
+        nested
+            .join(LEGACY_PROJECT_CONFIG_DIR_NAME)
+            .join("config-link"),
+    )?;
+
+    let codex_home = tmp.path().join("home");
+    tokio::fs::create_dir_all(&codex_home).await?;
+    make_config_for_test(&codex_home, &project_root, TrustLevel::Trusted, None).await?;
+
+    let cwd = AbsolutePathBuf::from_absolute_path(&nested)?;
+    let _layers = load_config_layers_state(
+        &codex_home,
+        Some(cwd),
+        &[] as &[(String, TomlValue)],
+        LoaderOverrides::default(),
+        CloudRequirementsLoader::default(),
+    )
+    .await?;
+
+    assert_eq!(
+        std::fs::read_link(nested.join(PROJECT_CONFIG_DIR_NAME).join("config-link"))?,
+        PathBuf::from("config.toml")
     );
 
     Ok(())

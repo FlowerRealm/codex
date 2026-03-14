@@ -93,7 +93,13 @@ fn validate_home_env_path(val: &str, env_var_name: &str) -> std::io::Result<Path
     }
 }
 
-fn migrate_legacy_dir_if_needed(legacy_dir: &Path, target_dir: &Path) -> std::io::Result<()> {
+/// Copies `legacy_dir` into `target_dir` once when the legacy directory exists
+/// and the target directory does not yet exist.
+///
+/// This is intentionally existence-based migration only. If `target_dir`
+/// already exists, the function does nothing and does not attempt to merge,
+/// validate, or overwrite any files.
+pub fn migrate_legacy_dir_if_needed(legacy_dir: &Path, target_dir: &Path) -> std::io::Result<()> {
     if target_dir.exists() || !legacy_dir.is_dir() {
         return Ok(());
     }
@@ -147,12 +153,14 @@ fn copy_symlink(source: &Path, target: &Path) -> std::io::Result<()> {
 mod tests {
     use super::find_codex_home_from_env;
     use super::find_codex_home_from_env_with_default_home;
+    use super::migrate_legacy_dir_if_needed;
     use codex_config::LEGACY_CODEX_HOME_DIR_NAME;
     use codex_config::REALMX_HOME_DIR_NAME;
     use dirs::home_dir;
     use pretty_assertions::assert_eq;
     use std::fs;
     use std::io::ErrorKind;
+    use std::path::PathBuf;
     use tempfile::TempDir;
 
     #[test]
@@ -256,6 +264,44 @@ mod tests {
             fs::read_to_string(target_dir.join("nested").join("data.txt"))
                 .expect("read migrated nested file"),
             "hello"
+        );
+    }
+
+    #[test]
+    fn migrate_legacy_dir_if_needed_skips_existing_target_dir() {
+        let temp_home = TempDir::new().expect("temp home");
+        let legacy_dir = temp_home.path().join(LEGACY_CODEX_HOME_DIR_NAME);
+        let target_dir = temp_home.path().join(REALMX_HOME_DIR_NAME);
+        fs::create_dir_all(&legacy_dir).expect("create legacy dir");
+        fs::create_dir_all(&target_dir).expect("create target dir");
+        fs::write(legacy_dir.join("config.toml"), "model = \"o3\"\n").expect("write legacy");
+        fs::write(target_dir.join("config.toml"), "model = \"gpt-5\"\n").expect("write target");
+
+        migrate_legacy_dir_if_needed(&legacy_dir, &target_dir).expect("skip existing target");
+
+        assert_eq!(
+            fs::read_to_string(target_dir.join("config.toml")).expect("read target config"),
+            "model = \"gpt-5\"\n"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn migrate_legacy_dir_if_needed_copies_symlinks() {
+        use std::os::unix::fs::symlink;
+
+        let temp_home = TempDir::new().expect("temp home");
+        let legacy_dir = temp_home.path().join(LEGACY_CODEX_HOME_DIR_NAME);
+        let target_dir = temp_home.path().join(REALMX_HOME_DIR_NAME);
+        fs::create_dir_all(&legacy_dir).expect("create legacy dir");
+        fs::write(legacy_dir.join("config.toml"), "model = \"o3\"\n").expect("write config");
+        symlink("config.toml", legacy_dir.join("config-link")).expect("create symlink");
+
+        migrate_legacy_dir_if_needed(&legacy_dir, &target_dir).expect("migrate legacy dir");
+
+        assert_eq!(
+            fs::read_link(target_dir.join("config-link")).expect("read migrated symlink"),
+            PathBuf::from("config.toml")
         );
     }
 }
