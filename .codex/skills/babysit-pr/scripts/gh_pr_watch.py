@@ -888,6 +888,8 @@ def recommend_actions(
     actions = []
     if pr["closed"] or pr["merged"]:
         return ["stop_pr_closed"]
+    if not review_state_complete:
+        return ["stop_review_state_unavailable"]
 
     if is_pr_ready_to_merge(
         pr,
@@ -1113,6 +1115,7 @@ def run_watch(args):
             "stop_pr_closed" in actions
             or "stop_exhausted_retries" in actions
             or "stop_ready_to_merge" in actions
+            or "stop_review_state_unavailable" in actions
         ):
             print_event("stop", {"actions": snapshot.get("actions"), "pr": snapshot.get("pr")})
             return 0

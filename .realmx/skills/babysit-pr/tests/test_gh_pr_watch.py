@@ -245,7 +245,7 @@ class GhPrWatchTests(unittest.TestCase):
             ["process_review_comment"],
         )
 
-    def test_review_state_must_be_complete_before_ready_to_merge(self):
+    def test_review_state_unavailable_stops_for_user_help(self):
         pr = {
             "closed": False,
             "merged": False,
@@ -278,7 +278,7 @@ class GhPrWatchTests(unittest.TestCase):
                 3,
                 review_state_complete=False,
             ),
-            ["idle"],
+            ["stop_review_state_unavailable"],
         )
 
     def test_combine_review_blocking_items_dedupes_same_comment_id_across_sources(self):
@@ -348,6 +348,48 @@ class GhPrWatchTests(unittest.TestCase):
                 3,
             ),
             ["stop_pr_closed"],
+        )
+
+    def test_run_watch_stops_when_review_state_is_unavailable(self):
+        snapshot = {
+            "pr": {
+                "head_sha": "abc123",
+                "state": "OPEN",
+                "mergeable": "MERGEABLE",
+                "merge_state_status": "CLEAN",
+                "review_decision": "",
+            },
+            "checks": {
+                "all_terminal": True,
+                "failed_count": 0,
+                "pending_count": 0,
+                "passed_count": 1,
+            },
+            "blocking_review_items": [],
+            "actions": ["stop_review_state_unavailable"],
+        }
+        args = SimpleNamespace(poll_seconds=30)
+        events = []
+
+        with (
+            mock.patch.object(
+                gh_pr_watch,
+                "collect_snapshot",
+                return_value=(snapshot, "/tmp/state"),
+            ),
+            mock.patch.object(
+                gh_pr_watch,
+                "print_event",
+                side_effect=lambda event, payload: events.append((event, payload)),
+            ),
+        ):
+            result = gh_pr_watch.run_watch(args)
+
+        self.assertEqual(result, 0)
+        self.assertEqual(events[1][0], "stop")
+        self.assertEqual(
+            events[1][1]["actions"],
+            ["stop_review_state_unavailable"],
         )
 
     def test_failed_checks_expose_diagnosis_and_retry_actions(self):
@@ -617,6 +659,7 @@ class GhPrWatchTests(unittest.TestCase):
         self.assertEqual(snapshot["pending_review_comments"], [])
         self.assertEqual(snapshot["blocking_review_items"], new_review_items)
         self.assertFalse(snapshot["review_state_complete"])
+        self.assertEqual(snapshot["actions"], ["stop_review_state_unavailable"])
         self.assertEqual(
             snapshot["warnings"],
             [

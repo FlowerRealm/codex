@@ -130,7 +130,7 @@ Use this loop in a live Codex session:
 8. If you pushed a commit or triggered a rerun, report the action briefly and continue polling (do not stop).
 9. After a review-fix push, proactively restart continuous monitoring (`--watch`) in the same turn unless a strict stop condition has already been reached.
 10. If everything is passing, mergeable, not blocked on required review approval, and there are no unaddressed review items, report success and stop.
-11. If blocked on a user-help-required issue (infra outage, exhausted flaky retries, unclear reviewer request, permissions), report the blocker and stop.
+11. If blocked on a user-help-required issue (infra outage, exhausted flaky retries, unclear reviewer request, permissions, or review-state API failures such as unresolved-thread queries), report the blocker and stop.
 12. Otherwise sleep according to the polling cadence below and repeat.
 
 When the user explicitly asks to monitor/watch/babysit a PR, prefer `--watch` so polling continues autonomously in one command. Use repeated `--once` snapshots only for debugging, local testing, or when the user explicitly asks for a one-shot check.
