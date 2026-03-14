@@ -850,8 +850,15 @@ def combine_review_blocking_items(new_review_items, pending_review_comments):
     return combined
 
 
-def is_pr_ready_to_merge(pr, checks_summary, blocking_review_items):
+def is_pr_ready_to_merge(
+    pr,
+    checks_summary,
+    blocking_review_items,
+    review_state_complete=True,
+):
     if pr["closed"] or pr["merged"]:
+        return False
+    if not review_state_complete:
         return False
     if not checks_summary["all_terminal"]:
         return False
@@ -876,12 +883,18 @@ def recommend_actions(
     blocking_review_items,
     retries_used,
     max_retries,
+    review_state_complete=True,
 ):
     actions = []
     if pr["closed"] or pr["merged"]:
         return ["stop_pr_closed"]
 
-    if is_pr_ready_to_merge(pr, checks_summary, blocking_review_items):
+    if is_pr_ready_to_merge(
+        pr,
+        checks_summary,
+        blocking_review_items,
+        review_state_complete,
+    ):
         actions.append("stop_ready_to_merge")
         return unique_actions(actions)
 
@@ -937,6 +950,7 @@ def collect_snapshot(args):
                 "message": str(err),
             }
         )
+    review_state_complete = not snapshot_warnings
     blocking_review_items = combine_review_blocking_items(
         new_review_items,
         pending_review_comments,
@@ -951,6 +965,7 @@ def collect_snapshot(args):
         blocking_review_items,
         retries_used,
         args.max_flaky_retries,
+        review_state_complete=review_state_complete,
     )
 
     state["pr"] = {"repo": pr["repo"], "number": pr["number"]}
@@ -965,6 +980,7 @@ def collect_snapshot(args):
         "new_review_items": new_review_items,
         "pending_review_comments": pending_review_comments,
         "blocking_review_items": blocking_review_items,
+        "review_state_complete": review_state_complete,
         "actions": actions,
         "retry_state": {
             "current_sha_retries_used": retries_used,

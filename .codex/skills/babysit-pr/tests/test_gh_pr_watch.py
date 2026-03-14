@@ -245,6 +245,42 @@ class GhPrWatchTests(unittest.TestCase):
             ["process_review_comment"],
         )
 
+    def test_review_state_must_be_complete_before_ready_to_merge(self):
+        pr = {
+            "closed": False,
+            "merged": False,
+            "mergeable": "MERGEABLE",
+            "merge_state_status": "CLEAN",
+            "review_decision": "",
+        }
+        checks_summary = {
+            "all_terminal": True,
+            "failed_count": 0,
+            "pending_count": 0,
+        }
+
+        self.assertFalse(
+            gh_pr_watch.is_pr_ready_to_merge(
+                pr,
+                checks_summary,
+                [],
+                review_state_complete=False,
+            )
+        )
+        self.assertEqual(
+            gh_pr_watch.recommend_actions(
+                pr,
+                checks_summary,
+                [],
+                [],
+                [],
+                0,
+                3,
+                review_state_complete=False,
+            ),
+            ["idle"],
+        )
+
     def test_combine_review_blocking_items_dedupes_same_comment_id_across_sources(self):
         new_review_items = [
             {
@@ -580,6 +616,7 @@ class GhPrWatchTests(unittest.TestCase):
         self.assertEqual(state_path, Path("/tmp/test-gh-pr-watch-state.json"))
         self.assertEqual(snapshot["pending_review_comments"], [])
         self.assertEqual(snapshot["blocking_review_items"], new_review_items)
+        self.assertFalse(snapshot["review_state_complete"])
         self.assertEqual(
             snapshot["warnings"],
             [
