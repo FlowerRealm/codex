@@ -17,6 +17,7 @@ use crate::history_cell::UserHistoryCell;
 use crate::test_backend::VT100Backend;
 use crate::tui::FrameRequester;
 use assert_matches::assert_matches;
+use codex_app_server_protocol::ConfigLayerSource;
 use codex_core::CodexAuth;
 use codex_core::config::ApprovalsReviewer;
 use codex_core::config::Config;
@@ -28,6 +29,7 @@ use codex_core::config::types::Notifications;
 use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::AppRequirementToml;
 use codex_core::config_loader::AppsRequirementsToml;
+use codex_core::config_loader::ConfigLayerEntry;
 use codex_core::config_loader::ConfigLayerStack;
 use codex_core::config_loader::ConfigRequirements;
 use codex_core::config_loader::ConfigRequirementsToml;
@@ -132,6 +134,9 @@ use serial_test::serial;
 use std::collections::BTreeMap;
 use std::collections::BTreeSet;
 use std::collections::HashSet;
+use std::io::Read;
+use std::io::Write;
+use std::net::TcpListener;
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 use tempfile::tempdir;
@@ -147,6 +152,55 @@ async fn test_config() -> Config {
         .build()
         .await
         .expect("config")
+}
+
+fn setup_provider_usage_project(
+    chat: &mut ChatWidget,
+    provider_id: &str,
+    script_contents: &str,
+) -> tempfile::TempDir {
+    let project_root = tempdir().expect("temp dir");
+    let dot_codex = project_root.path().join(".codex");
+    let providers_dir = dot_codex.join("providers").join(provider_id);
+    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
+    std::fs::write(providers_dir.join("usage.js"), script_contents).expect("write usage script");
+
+    chat.config.cwd = project_root.path().to_path_buf();
+    chat.config.active_project.trust_level =
+        Some(codex_protocol::config_types::TrustLevel::Trusted);
+    let dot_codex_folder =
+        AbsolutePathBuf::from_absolute_path(&dot_codex).expect("absolute dot codex path");
+    let layer = ConfigLayerEntry::new(
+        ConfigLayerSource::Project { dot_codex_folder },
+        TomlValue::Table(Default::default()),
+    );
+    chat.config.config_layer_stack = ConfigLayerStack::new(
+        vec![layer],
+        ConfigRequirements::default(),
+        ConfigRequirementsToml::default(),
+    )
+    .expect("project stack");
+
+    project_root
+}
+
+fn spawn_provider_usage_test_server(body: &'static str) -> String {
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test server");
+    let addr = listener.local_addr().expect("local addr");
+    std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().expect("accept request");
+        let mut request = [0; 1024];
+        let _ = stream.read(&mut request);
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        stream
+            .write_all(response.as_bytes())
+            .expect("write response");
+    });
+
+    format!("http://127.0.0.1:{}/usage", addr.port())
 }
 
 fn invalid_value(candidate: impl Into<String>, allowed: impl Into<String>) -> ConstraintError {
@@ -2003,17 +2057,11 @@ async fn prefetch_rate_limits_is_gated_on_chatgpt_auth_provider() {
 #[tokio::test]
 async fn dropping_chatwidget_aborts_provider_usage_poller() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let project_root = tempfile::tempdir().expect("temp dir");
-    let providers_dir = project_root.path().join(".codex/providers/openai");
-    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
-    std::fs::write(
-        providers_dir.join("usage.js"),
+    let _project_root = setup_provider_usage_project(
+        &mut chat,
+        "openai",
         "({ request: { url: 'https://example.test' }, extractor: () => null })",
-    )
-    .expect("write usage script");
-    chat.config.cwd = project_root.path().to_path_buf();
-    chat.config.active_project.trust_level =
-        Some(codex_protocol::config_types::TrustLevel::Trusted);
+    );
 
     chat.prefetch_provider_usage();
     let abort_handle = chat
@@ -2031,17 +2079,12 @@ async fn dropping_chatwidget_aborts_provider_usage_poller() {
 #[tokio::test]
 async fn provider_usage_poller_only_sends_one_immediate_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    let project_root = tempfile::tempdir().expect("temp dir");
-    let providers_dir = project_root.path().join(".codex/providers/openai");
-    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
-    std::fs::write(
-        providers_dir.join("usage.js"),
-        "({ request: { url: 'https://example.test' }, extractor: () => null })",
-    )
-    .expect("write usage script");
-    chat.config.cwd = project_root.path().to_path_buf();
-    chat.config.active_project.trust_level =
-        Some(codex_protocol::config_types::TrustLevel::Trusted);
+    let usage_url = spawn_provider_usage_test_server("null");
+    let _project_root = setup_provider_usage_project(
+        &mut chat,
+        "openai",
+        &format!("({{ request: {{ url: '{usage_url}' }}, extractor: () => null }})"),
+    );
 
     chat.prefetch_provider_usage();
 
@@ -2068,17 +2111,11 @@ async fn provider_usage_poller_only_sends_one_immediate_snapshot() {
 #[tokio::test]
 async fn provider_usage_poller_starts_when_query_is_enabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let project_root = tempfile::tempdir().expect("temp dir");
-    let providers_dir = project_root.path().join(".codex/providers/openai");
-    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
-    std::fs::write(
-        providers_dir.join("usage.js"),
+    let _project_root = setup_provider_usage_project(
+        &mut chat,
+        "openai",
         "({ request: { url: 'https://example.test' }, extractor: () => null })",
-    )
-    .expect("write usage script");
-    chat.config.cwd = project_root.path().to_path_buf();
-    chat.config.active_project.trust_level =
-        Some(codex_protocol::config_types::TrustLevel::Trusted);
+    );
     chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
 
     chat.prefetch_provider_usage();
@@ -10625,18 +10662,12 @@ async fn status_line_invalid_items_warn_once() {
 #[tokio::test]
 async fn remote_usage_appends_default_status_item() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let project_root = tempfile::tempdir().expect("temp dir");
-    let providers_dir = project_root.path().join(".codex/providers/remote");
-    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
-    std::fs::write(
-        providers_dir.join("usage.js"),
+    let _project_root = setup_provider_usage_project(
+        &mut chat,
+        "remote",
         "({ request: { url: 'https://example.test' }, extractor: () => null })",
-    )
-    .expect("write usage script");
+    );
     chat.config.model_provider_id = "remote".to_string();
-    chat.config.cwd = project_root.path().to_path_buf();
-    chat.config.active_project.trust_level =
-        Some(codex_protocol::config_types::TrustLevel::Trusted);
 
     let items = chat.configured_status_line_items();
 
@@ -10741,6 +10772,7 @@ async fn remote_usage_failure_stops_poller_and_records_error() {
 #[tokio::test]
 async fn remote_usage_duplicate_base_path_failure_has_stable_history_text() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.config.model_provider_id = "test-provider".to_string();
 
     chat.on_provider_usage_snapshot(Some(
         crate::provider_usage::ProviderUsageRefreshResult::Failed(
