@@ -127,7 +127,6 @@ use crossterm::event::KeyEvent;
 use crossterm::event::KeyModifiers;
 use insta::assert_snapshot;
 use pretty_assertions::assert_eq;
-use reqwest::header::HeaderValue;
 #[cfg(target_os = "windows")]
 use serial_test::serial;
 use std::collections::BTreeMap;
@@ -1867,8 +1866,8 @@ async fn make_chatwidget_manual(
         rate_limit_warnings: RateLimitWarningState::default(),
         rate_limit_switch_prompt: RateLimitSwitchPromptState::default(),
         rate_limit_poller: None,
-        su8_usage: Su8StatusLineUsage::default(),
-        su8_usage_poller: None,
+        provider_usage: None,
+        provider_usage_poller: None,
         adaptive_chunking: crate::streaming::chunking::AdaptiveChunkingPolicy::default(),
         stream_controller: None,
         plan_stream_controller: None,
@@ -2002,16 +2001,25 @@ async fn prefetch_rate_limits_is_gated_on_chatgpt_auth_provider() {
 }
 
 #[tokio::test]
-async fn dropping_chatwidget_aborts_su8_usage_poller() {
+async fn dropping_chatwidget_aborts_provider_usage_poller() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
-    chat.config.model_provider.base_url = Some("https://example.test/v1".to_string());
+    let project_root = tempfile::tempdir().expect("temp dir");
+    let providers_dir = project_root.path().join(".codex/providers/openai");
+    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
+    std::fs::write(
+        providers_dir.join("usage.js"),
+        "({ request: { url: 'https://example.test' }, extractor: () => null })",
+    )
+    .expect("write usage script");
+    chat.config.cwd = project_root.path().to_path_buf();
+    chat.config.active_project.trust_level =
+        Some(codex_protocol::config_types::TrustLevel::Trusted);
 
-    chat.prefetch_su8_usage();
+    chat.prefetch_provider_usage();
     let abort_handle = chat
-        .su8_usage_poller
+        .provider_usage_poller
         .as_ref()
-        .expect("su8 poller should start for su8 providers")
+        .expect("provider usage poller should start for usage-enabled providers")
         .abort_handle();
 
     drop(chat);
@@ -2021,41 +2029,61 @@ async fn dropping_chatwidget_aborts_su8_usage_poller() {
 }
 
 #[tokio::test]
-async fn su8_usage_poller_only_sends_one_immediate_snapshot() {
+async fn provider_usage_poller_only_sends_one_immediate_snapshot() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
+    let project_root = tempfile::tempdir().expect("temp dir");
+    let providers_dir = project_root.path().join(".codex/providers/openai");
+    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
+    std::fs::write(
+        providers_dir.join("usage.js"),
+        "({ request: { url: 'https://example.test' }, extractor: () => null })",
+    )
+    .expect("write usage script");
+    chat.config.cwd = project_root.path().to_path_buf();
+    chat.config.active_project.trust_level =
+        Some(codex_protocol::config_types::TrustLevel::Trusted);
 
-    chat.prefetch_su8_usage();
+    chat.prefetch_provider_usage();
 
     let event = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv())
         .await
-        .expect("expected one immediate su8 usage event")
+        .expect("expected one immediate provider usage event")
         .expect("channel should stay open");
-    assert!(matches!(event, AppEvent::Su8UsageSnapshotFetched(None)));
+    assert!(matches!(
+        event,
+        AppEvent::ProviderUsageSnapshotFetched(Some(
+            crate::provider_usage::ProviderUsageRefreshResult::Skipped
+        ))
+    ));
     assert!(
         tokio::time::timeout(std::time::Duration::from_millis(20), rx.recv())
             .await
             .is_err(),
-        "su8 poller should wait for the interval before sending another snapshot"
+        "provider usage poller should wait for the interval before sending another snapshot"
     );
 
-    chat.stop_su8_usage_poller();
+    chat.stop_provider_usage_poller();
 }
 
 #[tokio::test]
-async fn su8_usage_poller_is_gated_on_visible_status_items() {
+async fn provider_usage_poller_starts_when_query_is_enabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
-    chat.config.model_provider.base_url = Some("https://example.test/v1".to_string());
+    let project_root = tempfile::tempdir().expect("temp dir");
+    let providers_dir = project_root.path().join(".codex/providers/openai");
+    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
+    std::fs::write(
+        providers_dir.join("usage.js"),
+        "({ request: { url: 'https://example.test' }, extractor: () => null })",
+    )
+    .expect("write usage script");
+    chat.config.cwd = project_root.path().to_path_buf();
+    chat.config.active_project.trust_level =
+        Some(codex_protocol::config_types::TrustLevel::Trusted);
     chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
 
-    chat.prefetch_su8_usage();
-    assert!(chat.su8_usage_poller.is_none());
-
-    chat.config.tui_status_line = Some(vec!["su8-remaining".to_string()]);
-    chat.prefetch_su8_usage();
-    assert!(chat.su8_usage_poller.is_some());
-    chat.stop_su8_usage_poller();
+    chat.prefetch_provider_usage();
+    assert!(chat.provider_usage_poller.is_some());
+    chat.stop_provider_usage_poller();
 }
 
 #[tokio::test]
@@ -10595,188 +10623,135 @@ async fn status_line_invalid_items_warn_once() {
 }
 
 #[tokio::test]
-async fn su8_provider_appends_default_status_items() {
+async fn remote_usage_appends_default_status_item() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
+    let project_root = tempfile::tempdir().expect("temp dir");
+    let providers_dir = project_root.path().join(".codex/providers/remote");
+    std::fs::create_dir_all(&providers_dir).expect("create providers dir");
+    std::fs::write(
+        providers_dir.join("usage.js"),
+        "({ request: { url: 'https://example.test' }, extractor: () => null })",
+    )
+    .expect("write usage script");
+    chat.config.model_provider_id = "remote".to_string();
+    chat.config.cwd = project_root.path().to_path_buf();
+    chat.config.active_project.trust_level =
+        Some(codex_protocol::config_types::TrustLevel::Trusted);
 
     let items = chat.configured_status_line_items();
 
-    assert!(items.iter().any(|item| item == "su8-remaining"));
-    assert!(items.iter().any(|item| item == "su8-today-used"));
+    assert!(items.iter().any(|item| item == "remote-usage"));
 }
 
 #[tokio::test]
-async fn su8_status_line_values_render_remaining_and_today_used() {
+async fn remote_usage_status_line_value_renders_summary() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
-    chat.on_su8_usage_snapshot(Some(crate::app_event::Su8UsageSnapshot {
-        remaining: 12.345,
-        today_limit: Some(20.0),
-        today_remaining: Some(7.5),
-    }));
+    chat.on_provider_usage_snapshot(Some(
+        crate::provider_usage::ProviderUsageRefreshResult::Updated(
+            crate::provider_usage::ProviderUsageSnapshot {
+                plans: vec![crate::provider_usage::ProviderUsagePlan {
+                    plan_name: None,
+                    remaining: Some(12.345),
+                    used: Some(12.5),
+                    total: Some(20.0),
+                    unit: Some("USD".to_string()),
+                    extra: None,
+                }],
+                error_message: None,
+            },
+        ),
+    ));
 
     assert_eq!(
-        chat.status_line_value_for_item(&StatusLineItem::Su8Remaining),
-        Some("rem 12.35 USD".to_string())
-    );
-    assert_eq!(
-        chat.status_line_value_for_item(&StatusLineItem::Su8TodayUsed),
-        Some("today 12.50 USD".to_string())
+        chat.status_line_value_for_item(&StatusLineItem::RemoteUsage),
+        Some("rem 12.35 USD | used 12.50 USD | total 20.00 USD".to_string())
     );
 }
 
 #[tokio::test]
-async fn su8_status_line_footer_snapshot() {
+async fn remote_usage_status_line_footer_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
+    chat.config.tui_status_line = Some(vec!["remote-usage".to_string()]);
+    chat.on_provider_usage_snapshot(Some(
+        crate::provider_usage::ProviderUsageRefreshResult::Updated(
+            crate::provider_usage::ProviderUsageSnapshot {
+                plans: vec![crate::provider_usage::ProviderUsagePlan {
+                    plan_name: None,
+                    remaining: Some(12.345),
+                    used: Some(12.5),
+                    total: Some(20.0),
+                    unit: Some("USD".to_string()),
+                    extra: None,
+                }],
+                error_message: None,
+            },
+        ),
+    ));
+
+    let footer = render_bottom_popup(&chat, 80);
+    assert_snapshot!("remote_usage_status_line_footer", footer);
+}
+
+#[tokio::test]
+async fn legacy_remote_usage_ids_map_to_remote_usage() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     chat.config.tui_status_line = Some(vec![
+        "provider-usage-remaining".to_string(),
+        "provider-usage-used".to_string(),
         "su8-remaining".to_string(),
         "su8-today-used".to_string(),
     ]);
-    chat.on_su8_usage_snapshot(Some(crate::app_event::Su8UsageSnapshot {
-        remaining: 12.345,
-        today_limit: Some(20.0),
-        today_remaining: Some(7.5),
-    }));
-
-    let footer = render_bottom_popup(&chat, 80);
-    assert_snapshot!("su8_status_line_footer", footer);
-}
-
-#[tokio::test]
-async fn su8_status_line_today_used_clamps_at_zero() {
-    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.config.model_provider_id = "su8".to_string();
-    chat.on_su8_usage_snapshot(Some(crate::app_event::Su8UsageSnapshot {
-        remaining: 3.0,
-        today_limit: Some(5.0),
-        today_remaining: Some(8.0),
-    }));
 
     assert_eq!(
-        chat.status_line_value_for_item(&StatusLineItem::Su8TodayUsed),
-        Some("today 0.00 USD".to_string())
+        chat.configured_status_line_items(),
+        vec![StatusLineItem::RemoteUsage.to_string()]
     );
 }
 
 #[tokio::test]
-async fn su8_usage_request_normalizes_trailing_slash() {
-    let provider = codex_core::ModelProviderInfo {
-        name: "SU8".to_string(),
-        base_url: Some("https://example.test/v1/".to_string()),
-        api_key: None,
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        wire_api: codex_core::WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
+async fn remote_usage_failure_stops_poller_and_records_error() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    chat.prefetch_provider_usage();
+    assert!(chat.provider_usage_poller.is_none());
 
+    chat.on_provider_usage_snapshot(Some(
+        crate::provider_usage::ProviderUsageRefreshResult::Failed(
+            "provider usage script failed: boom".to_string(),
+        ),
+    ));
+
+    assert!(chat.provider_usage_poller.is_none());
     assert_eq!(
-        su8_usage_url(&provider),
-        Some("https://example.test/v1/usage".to_string())
+        chat.provider_usage,
+        Some(crate::provider_usage::ProviderUsageSnapshot {
+            plans: Vec::new(),
+            error_message: Some("provider usage script failed: boom".to_string()),
+        })
+    );
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(&cells[0]);
+    assert!(rendered.contains("Remote usage failed for provider"));
+    assert!(rendered.contains("provider usage script failed: boom"));
+    assert_eq!(
+        chat.status_line_value_for_item(&StatusLineItem::RemoteUsage),
+        None
     );
 }
 
 #[tokio::test]
-async fn su8_usage_request_preserves_query_params() {
-    let provider = codex_core::ModelProviderInfo {
-        name: "SU8".to_string(),
-        base_url: Some("https://example.test/v1".to_string()),
-        api_key: None,
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        wire_api: codex_core::WireApi::Responses,
-        query_params: Some(HashMap::from([(
-            "api-version".to_string(),
-            "2025-04-01-preview".to_string(),
-        )])),
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
+async fn remote_usage_duplicate_base_path_failure_has_stable_history_text() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
 
-    assert_eq!(
-        su8_usage_url(&provider),
-        Some("https://example.test/v1/usage?api-version=2025-04-01-preview".to_string())
-    );
-}
+    chat.on_provider_usage_snapshot(Some(
+        crate::provider_usage::ProviderUsageRefreshResult::Failed(
+            "request.url duplicates provider base path; provider `base_url` already ends with `/codex/v1`. Use `{{baseUrl}}/usage` instead."
+                .to_string(),
+        ),
+    ));
 
-#[tokio::test]
-async fn su8_usage_request_config_env_headers_override_static_headers() {
-    let provider = codex_core::ModelProviderInfo {
-        name: "SU8".to_string(),
-        base_url: Some("https://example.test/v1".to_string()),
-        api_key: None,
-        env_key: None,
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        wire_api: codex_core::WireApi::Responses,
-        query_params: None,
-        http_headers: Some(HashMap::from([(
-            "X-Test-Header".to_string(),
-            "static-value".to_string(),
-        )])),
-        env_http_headers: Some(HashMap::from([(
-            "X-Test-Header".to_string(),
-            "SU8_TEST_HEADER".to_string(),
-        )])),
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
-
-    let config = su8_usage_request_config_with_env(&provider, None, |name| {
-        (name == "SU8_TEST_HEADER").then(|| "env-value".to_string())
-    })
-    .expect("request config should be built");
-
-    assert_eq!(
-        config
-            .headers
-            .get("X-Test-Header")
-            .expect("header should exist"),
-        &HeaderValue::from_static("env-value")
-    );
-    assert_eq!(config.headers.get_all("X-Test-Header").iter().count(), 1);
-}
-
-#[tokio::test]
-async fn su8_usage_request_config_drops_chatgpt_fallback_when_env_key_missing() {
-    let provider = codex_core::ModelProviderInfo {
-        name: "SU8".to_string(),
-        base_url: Some("https://example.test/v1".to_string()),
-        api_key: None,
-        env_key: Some("MISSING_SU8_API_KEY".to_string()),
-        env_key_instructions: None,
-        experimental_bearer_token: None,
-        wire_api: codex_core::WireApi::Responses,
-        query_params: None,
-        http_headers: None,
-        env_http_headers: None,
-        request_max_retries: None,
-        stream_max_retries: None,
-        stream_idle_timeout_ms: None,
-        requires_openai_auth: false,
-        supports_websockets: false,
-    };
-    let auth = CodexAuth::create_dummy_chatgpt_auth_for_testing();
-
-    assert_eq!(su8_usage_request_config(&provider, Some(&auth)), None);
+    let cells = drain_insert_history(&mut rx);
+    let rendered = lines_to_single_string(&cells[0]);
+    assert_snapshot!("remote_usage_duplicate_base_path_failure_history", rendered);
 }
 
 #[tokio::test]
