@@ -44,6 +44,8 @@ const SIDE_CONTENT_GAP: u16 = 2;
 
 /// Shared menu-surface horizontal inset (2 cells per side) used by selection popups.
 const MENU_SURFACE_HORIZONTAL_INSET: u16 = 4;
+#[cfg(test)]
+const REALMX_HOME_DIR_NAME: &str = ".realmx";
 
 /// Controls how the side content panel is sized relative to the popup width.
 ///
@@ -1169,7 +1171,7 @@ mod tests {
         let (tx_raw, _rx) = unbounded_channel::<AppEvent>();
         let tx = AppEventSender::new(tx_raw);
         let home = dirs::home_dir().expect("home directory should be available");
-        let codex_home = home.join(".codex");
+        let codex_home = home.join(REALMX_HOME_DIR_NAME);
         let params =
             crate::theme_picker::build_theme_picker_params(None, Some(&codex_home), Some(94));
         let view = ListSelectionView::new(params, tx);

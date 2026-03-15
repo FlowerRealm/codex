@@ -9,6 +9,12 @@ mod requirements_exec_policy;
 mod state;
 
 pub const CONFIG_TOML_FILE: &str = "config.toml";
+pub const LEGACY_CODEX_HOME_DIR_NAME: &str = ".codex";
+pub const REALMX_HOME_DIR_NAME: &str = ".realmx";
+pub const REALMX_HOME_ENV_VAR: &str = "REALMX_HOME";
+pub const CODEX_HOME_ENV_VAR: &str = "CODEX_HOME";
+pub const PROJECT_CONFIG_DIR_NAME: &str = REALMX_HOME_DIR_NAME;
+pub const LEGACY_PROJECT_CONFIG_DIR_NAME: &str = LEGACY_CODEX_HOME_DIR_NAME;
 
 pub use cloud_requirements::CloudRequirementsLoadError;
 pub use cloud_requirements::CloudRequirementsLoadErrorCode;

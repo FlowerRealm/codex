@@ -7737,39 +7737,53 @@ async fn experimental_popup_shows_js_repl_node_requirement() {
 }
 
 #[tokio::test]
-async fn experimental_popup_includes_guardian_approval() {
+async fn experimental_popup_includes_smart_approvals() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
-    let guardian_stage = FEATURES
+    let smart_approvals_stage = FEATURES
         .iter()
         .find(|spec| spec.id == Feature::GuardianApproval)
         .map(|spec| spec.stage)
         .expect("expected guardian approval feature metadata");
-    let guardian_name = guardian_stage
+    let smart_approvals_name = smart_approvals_stage
         .experimental_menu_name()
         .expect("expected guardian approval experimental menu name");
-    let guardian_description = guardian_stage
-        .experimental_menu_description()
-        .expect("expected guardian approval experimental description");
-    let guardian_idx = chat
+    let smart_approvals_idx = chat
         .experimental_feature_items()
         .iter()
         .position(|item| item.feature == Feature::GuardianApproval)
         .expect("expected guardian approval feature in experimental popup items");
 
     chat.open_experimental_popup();
-    for _ in 0..guardian_idx {
+    for _ in 0..smart_approvals_idx {
         chat.handle_key_event(KeyEvent::new(KeyCode::Down, KeyModifiers::NONE));
     }
 
     let popup = render_bottom_popup(&chat, 120);
-    let normalized_popup = popup.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized_popup = popup
+        .replace("-\n", "")
+        .replace("- ", "")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     assert!(
-        popup.contains(guardian_name),
-        "expected guardian approvals entry in experimental popup, got:\n{popup}"
+        popup.contains(smart_approvals_name),
+        "expected Smart Approvals entry in experimental popup, got:\n{popup}"
     );
     assert!(
-        normalized_popup.contains(guardian_description),
-        "expected guardian approvals description in experimental popup, got:\n{popup}"
+        normalized_popup.contains("When Codex needs approval for higher-risk actions"),
+        "expected Smart Approvals description to explain the approval routing, got:\n{popup}"
+    );
+    assert!(
+        normalized_popup.contains("sandbox escapes or blocked network access"),
+        "expected Smart Approvals description to mention high-risk approval examples, got:\n{popup}"
+    );
+    assert!(
+        normalized_popup.contains("security reviewer subagent"),
+        "expected Smart Approvals description to mention the reviewer subagent, got:\n{popup}"
+    );
+    assert!(
+        normalized_popup.contains("runs a subagent on every approval request"),
+        "expected Smart Approvals description to mention the token cost tradeoff, got:\n{popup}"
     );
 }
 

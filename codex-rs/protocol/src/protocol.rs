@@ -78,6 +78,9 @@ pub use crate::permissions::NetworkSandboxPolicy;
 pub use crate::request_permissions::RequestPermissionsArgs;
 pub use crate::request_user_input::RequestUserInputEvent;
 
+const PROJECT_CONFIG_DIR_NAME: &str = ".realmx";
+const LEGACY_PROJECT_CONFIG_DIR_NAME: &str = ".codex";
+
 /// Open/close tags for special user-input blocks. Used across crates to avoid
 /// duplicated hardcoded strings.
 pub const USER_INSTRUCTIONS_OPEN_TAG: &str = "<user_instructions>";
@@ -782,8 +785,8 @@ pub enum SandboxPolicy {
 /// A writable root path accompanied by a list of subpaths that should remain
 /// read‑only even when the root is writable. This is primarily used to ensure
 /// that folders containing files that could be modified to escalate the
-/// privileges of the agent (e.g. `.codex`, `.git`, notably `.git/hooks`) under
-/// a writable root are not modified by the agent.
+/// privileges of the agent (e.g. `.realmx`, legacy `.codex`, `.git`, notably
+/// `.git/hooks`) under a writable root are not modified by the agent.
 #[derive(Debug, Clone, PartialEq, Eq, JsonSchema)]
 pub struct WritableRoot {
     pub root: AbsolutePathBuf,
@@ -1031,9 +1034,13 @@ fn default_read_only_subpaths_for_writable_root(
         subpaths.push(top_level_git);
     }
 
-    // Make .agents/skills and .codex/config.toml and related files read-only
+    // Make .agents/skills, .realmx, and legacy .codex config files read-only
     // to the agent, by default.
-    for subdir in &[".agents", ".codex"] {
+    for subdir in &[
+        ".agents",
+        PROJECT_CONFIG_DIR_NAME,
+        LEGACY_PROJECT_CONFIG_DIR_NAME,
+    ] {
         #[allow(clippy::expect_used)]
         let top_level_codex = writable_root.join(subdir).expect("valid relative path");
         if top_level_codex.as_path().is_dir() {
@@ -3749,15 +3756,16 @@ mod tests {
     fn restricted_file_system_policy_derives_effective_paths() {
         let cwd = TempDir::new().expect("tempdir");
         std::fs::create_dir_all(cwd.path().join(".agents")).expect("create .agents");
-        std::fs::create_dir_all(cwd.path().join(".codex")).expect("create .codex");
+        std::fs::create_dir_all(cwd.path().join(PROJECT_CONFIG_DIR_NAME))
+            .expect("create project config dir");
         let cwd_absolute =
             AbsolutePathBuf::from_absolute_path(cwd.path()).expect("absolute tempdir");
         let secret = AbsolutePathBuf::resolve_path_against_base("secret", cwd.path())
             .expect("resolve unreadable path");
         let agents = AbsolutePathBuf::resolve_path_against_base(".agents", cwd.path())
             .expect("resolve .agents");
-        let codex = AbsolutePathBuf::resolve_path_against_base(".codex", cwd.path())
-            .expect("resolve .codex");
+        let codex = AbsolutePathBuf::resolve_path_against_base(PROJECT_CONFIG_DIR_NAME, cwd.path())
+            .expect("resolve project config dir");
         let policy = FileSystemSandboxPolicy::restricted(vec![
             FileSystemSandboxEntry {
                 path: FileSystemPath::Special {

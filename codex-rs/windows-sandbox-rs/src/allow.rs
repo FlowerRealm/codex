@@ -1,4 +1,6 @@
 use crate::policy::SandboxPolicy;
+use codex_config::LEGACY_PROJECT_CONFIG_DIR_NAME;
+use codex_config::PROJECT_CONFIG_DIR_NAME;
 use dunce::canonicalize;
 use std::collections::HashMap;
 use std::collections::HashSet;
@@ -52,7 +54,12 @@ pub fn compute_allow_paths(
                 let canonical = canonicalize(&candidate).unwrap_or(candidate);
                 add_allow(canonical.clone());
 
-                for protected_subdir in [".git", ".codex", ".agents"] {
+                for protected_subdir in [
+                    ".git",
+                    PROJECT_CONFIG_DIR_NAME,
+                    LEGACY_PROJECT_CONFIG_DIR_NAME,
+                    ".agents",
+                ] {
                     let protected_entry = canonical.join(protected_subdir);
                     if protected_entry.exists() {
                         add_deny(protected_entry);
@@ -212,12 +219,14 @@ mod tests {
     }
 
     #[test]
-    fn denies_codex_and_agents_inside_writable_root() {
+    fn denies_project_config_dirs_and_agents_inside_writable_root() {
         let tmp = TempDir::new().expect("tempdir");
         let command_cwd = tmp.path().join("workspace");
-        let codex_dir = command_cwd.join(".codex");
+        let codex_dir = command_cwd.join(PROJECT_CONFIG_DIR_NAME);
+        let legacy_codex_dir = command_cwd.join(LEGACY_PROJECT_CONFIG_DIR_NAME);
         let agents_dir = command_cwd.join(".agents");
         let _ = fs::create_dir_all(&codex_dir);
+        let _ = fs::create_dir_all(&legacy_codex_dir);
         let _ = fs::create_dir_all(&agents_dir);
 
         let policy = SandboxPolicy::WorkspaceWrite {
@@ -234,6 +243,7 @@ mod tests {
             .collect();
         let expected_deny: HashSet<PathBuf> = [
             dunce::canonicalize(&codex_dir).unwrap(),
+            dunce::canonicalize(&legacy_codex_dir).unwrap(),
             dunce::canonicalize(&agents_dir).unwrap(),
         ]
         .into_iter()

@@ -36,7 +36,7 @@ realmx --disable shell_tool \
   --config 'mcp_servers.bash={command = "npx", args = ["-y", "@flowerrealm/realmx-shell-tool-mcp"]}'
 ```
 
-To configure this permanently so you can use the MCP while running `realmx` without additional command-line flags, add the following to your `~/.codex/config.toml`. The legacy `codex` command still works:
+To configure this permanently so you can use the MCP while running `realmx` without additional command-line flags, add the following to your `~/.realmx/config.toml`. The legacy `codex` command still works:
 
 ```toml
 [features]

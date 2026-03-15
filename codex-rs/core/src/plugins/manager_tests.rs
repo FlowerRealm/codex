@@ -8,6 +8,7 @@ use crate::config_loader::ConfigLayerStack;
 use crate::config_loader::ConfigRequirements;
 use crate::config_loader::ConfigRequirementsToml;
 use codex_app_server_protocol::ConfigLayerSource;
+use codex_config::PROJECT_CONFIG_DIR_NAME;
 use pretty_assertions::assert_eq;
 use std::fs;
 use tempfile::TempDir;
@@ -1711,14 +1712,19 @@ fn load_plugins_ignores_project_config_files() {
         r#"{"name":"sample"}"#,
     );
     write_file(
-        &project_root.join(".codex/config.toml"),
+        &project_root
+            .join(PROJECT_CONFIG_DIR_NAME)
+            .join("config.toml"),
         &plugin_config_toml(true, true),
     );
 
     let stack = ConfigLayerStack::new(
         vec![ConfigLayerEntry::new(
             ConfigLayerSource::Project {
-                dot_codex_folder: AbsolutePathBuf::try_from(project_root.join(".codex")).unwrap(),
+                dot_codex_folder: AbsolutePathBuf::try_from(
+                    project_root.join(PROJECT_CONFIG_DIR_NAME),
+                )
+                .unwrap(),
             },
             toml::from_str(&plugin_config_toml(true, true)).expect("project config should parse"),
         )],
