@@ -30,6 +30,7 @@ pub(crate) struct ProviderUsageScriptEditorView {
     textarea_state: RefCell<TextAreaState>,
     complete: bool,
     error: Option<String>,
+    delete_pending_confirmation: bool,
 }
 
 impl ProviderUsageScriptEditorView {
@@ -46,10 +47,12 @@ impl ProviderUsageScriptEditorView {
             textarea_state: RefCell::new(TextAreaState::default()),
             complete: false,
             error: None,
+            delete_pending_confirmation: false,
         }
     }
 
     fn save(&mut self) {
+        self.delete_pending_confirmation = false;
         let script = self.textarea.text().trim().to_string();
         if script.is_empty() {
             self.error = Some("Usage script cannot be empty.".to_string());
@@ -67,6 +70,13 @@ impl ProviderUsageScriptEditorView {
     fn delete(&mut self) {
         if !self.has_existing_script {
             self.error = Some("No usage script exists yet for this provider.".to_string());
+            self.delete_pending_confirmation = false;
+            return;
+        }
+
+        if !self.delete_pending_confirmation {
+            self.delete_pending_confirmation = true;
+            self.error = Some("Press Ctrl+R again to delete this usage script.".to_string());
             return;
         }
 
@@ -79,6 +89,17 @@ impl ProviderUsageScriptEditorView {
 
 impl BottomPaneView for ProviderUsageScriptEditorView {
     fn handle_key_event(&mut self, key_event: KeyEvent) {
+        let is_delete_shortcut = matches!(
+            key_event,
+            KeyEvent {
+                code: KeyCode::Char('r'),
+                modifiers,
+                ..
+            } if modifiers.contains(KeyModifiers::CONTROL)
+        );
+        if !is_delete_shortcut {
+            self.delete_pending_confirmation = false;
+        }
         self.error = None;
         match key_event {
             KeyEvent {
@@ -160,7 +181,7 @@ impl Renderable for ProviderUsageScriptEditorView {
             buf,
         );
         Paragraph::new(Line::from(
-            "Ctrl+S saves. Ctrl+R deletes the file. Esc cancels.".dim(),
+            "Ctrl+S saves. Press Ctrl+R twice to delete. Esc cancels.".dim(),
         ))
         .render(
             Rect {
@@ -187,7 +208,9 @@ impl Renderable for ProviderUsageScriptEditorView {
             .clone()
             .map(ratatui::prelude::Stylize::red)
             .unwrap_or_else(|| {
-                if self.has_existing_script {
+                if self.delete_pending_confirmation {
+                    "Press Ctrl+R again to confirm deletion.".yellow()
+                } else if self.has_existing_script {
                     "Project usage.js enables remote usage polling for this provider.".dim()
                 } else {
                     "Saving will create .codex/providers/<provider-id>/usage.js.".dim()
@@ -217,5 +240,78 @@ impl Renderable for ProviderUsageScriptEditorView {
             },
             *self.textarea_state.borrow(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app_event::AppEvent;
+    use pretty_assertions::assert_eq;
+    use tempfile::tempdir;
+    use tokio::sync::mpsc::unbounded_channel;
+
+    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new(code, modifiers)
+    }
+
+    fn editor_state(has_existing_script: bool) -> ProviderUsageEditorState {
+        let project_root = tempdir().expect("temp dir");
+        ProviderUsageEditorState {
+            provider_id: "openai".to_string(),
+            provider_name: "OpenAI".to_string(),
+            script_path: project_root.path().join(".codex/providers/openai/usage.js"),
+            initial_contents:
+                "({ request: { url: 'https://example.test' }, extractor: () => null })".to_string(),
+            has_existing_script,
+        }
+    }
+
+    #[test]
+    fn delete_shortcut_requires_confirmation() {
+        let (tx, mut rx) = unbounded_channel();
+        let mut view =
+            ProviderUsageScriptEditorView::new(editor_state(true), AppEventSender::new(tx));
+
+        view.handle_key_event(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+
+        assert!(!view.complete);
+        assert_eq!(
+            view.error.as_deref(),
+            Some("Press Ctrl+R again to delete this usage script.")
+        );
+        assert!(rx.try_recv().is_err());
+
+        view.handle_key_event(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+
+        assert!(view.complete);
+        let event = rx.try_recv().expect("expected delete event");
+        let AppEvent::DeleteProviderUsageScript { provider_id } = event else {
+            panic!("expected delete provider usage script event");
+        };
+        assert_eq!(provider_id, "openai");
+    }
+
+    #[test]
+    fn delete_confirmation_is_cleared_by_other_input() {
+        let (tx, mut rx) = unbounded_channel();
+        let mut view =
+            ProviderUsageScriptEditorView::new(editor_state(true), AppEventSender::new(tx));
+
+        view.handle_key_event(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+        view.handle_key_event(key_event(KeyCode::Char('x'), KeyModifiers::NONE));
+
+        assert!(!view.delete_pending_confirmation);
+        assert!(view.error.is_none());
+        assert!(rx.try_recv().is_err());
+
+        view.handle_key_event(key_event(KeyCode::Char('r'), KeyModifiers::CONTROL));
+
+        assert!(!view.complete);
+        assert_eq!(
+            view.error.as_deref(),
+            Some("Press Ctrl+R again to delete this usage script.")
+        );
+        assert!(rx.try_recv().is_err());
     }
 }
