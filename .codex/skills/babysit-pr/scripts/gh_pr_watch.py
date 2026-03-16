@@ -213,8 +213,7 @@ def parse_pr_spec(pr_spec):
 def pr_view_fields():
     return (
         "number,url,state,mergedAt,closedAt,author,headRefName,headRefOid,"
-        "baseRepository,baseRepositoryOwner,headRepository,headRepositoryOwner,"
-        "mergeable,mergeStateStatus,reviewDecision"
+        "headRepository,headRepositoryOwner,mergeable,mergeStateStatus,reviewDecision"
     )
 
 
