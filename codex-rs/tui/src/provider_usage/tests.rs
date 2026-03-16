@@ -344,3 +344,30 @@ async fn provider_usage_enabled_prefers_current_trusted_cwd_over_stale_project_l
         Some(Duration::from_secs(DEFAULT_POLL_INTERVAL_SECS))
     );
 }
+
+#[tokio::test]
+async fn trusted_project_root_prefers_trusted_subproject_over_git_root_fallback() {
+    let codex_home = tempfile::tempdir().expect("temp dir");
+    let mut config = ConfigBuilder::default()
+        .codex_home(codex_home.path().to_path_buf())
+        .build()
+        .await
+        .expect("config");
+    let repo_root = tempfile::tempdir().expect("repo root");
+    std::fs::create_dir(repo_root.path().join(".git")).expect("create .git dir");
+
+    let trusted_subproject = repo_root.path().join("apps/child");
+    std::fs::create_dir_all(trusted_subproject.join(".codex/providers/openai"))
+        .expect("create trusted project providers dir");
+
+    config.cwd = trusted_subproject.clone();
+    config.active_project.trust_level = Some(TrustLevel::Trusted);
+    config.projects = Some(HashMap::from([(
+        trusted_subproject.display().to_string(),
+        codex_core::config::ProjectConfig {
+            trust_level: Some(TrustLevel::Trusted),
+        },
+    )]));
+
+    assert_eq!(trusted_project_root(&config), Some(trusted_subproject));
+}

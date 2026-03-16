@@ -461,6 +461,20 @@ fn trusted_project_root(config: &Config) -> Option<PathBuf> {
     {
         return Some(project_root);
     }
+    if let Some(project_root) = config
+        .projects
+        .as_ref()
+        .into_iter()
+        .flat_map(HashMap::iter)
+        .filter(|(_, project)| project.is_trusted())
+        .filter_map(|(path, _)| {
+            let project_root = PathBuf::from(path);
+            cwd.starts_with(&project_root).then_some(project_root)
+        })
+        .max_by_key(|project_root| project_root.components().count())
+    {
+        return Some(project_root);
+    }
     Some(cwd_project_root)
 }
 
