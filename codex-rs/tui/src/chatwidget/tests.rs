@@ -2109,6 +2109,81 @@ async fn provider_usage_poller_only_sends_one_immediate_snapshot() {
 }
 
 #[tokio::test]
+async fn provider_usage_poller_retries_after_failed_refresh() {
+    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind test server");
+    let addr = listener.local_addr().expect("local addr");
+    std::thread::spawn(move || {
+        for (status_line, body) in [
+            (
+                "500 Internal Server Error",
+                r#"{"error":"temporary outage"}"#,
+            ),
+            ("200 OK", r#"{"remaining":7}"#),
+        ] {
+            let (mut stream, _) = listener.accept().expect("accept request");
+            let mut request = [0; 1024];
+            let _ = stream.read(&mut request);
+            let response = format!(
+                "HTTP/1.1 {status_line}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write response");
+        }
+    });
+    let usage_url = format!("http://127.0.0.1:{}/usage", addr.port());
+    let _project_root = setup_provider_usage_project(
+        &mut chat,
+        "openai",
+        &format!(
+            "({{ request: {{ url: '{usage_url}' }}, extractor: (response) => [{{ remaining: Number(response.remaining), unit: 'USD' }}] }})"
+        ),
+    );
+
+    chat.spawn_provider_usage_poller(std::time::Duration::from_millis(10));
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        .await
+        .expect("expected initial provider usage event")
+        .expect("expected initial provider usage event");
+    assert!(matches!(
+        event,
+        AppEvent::ProviderUsageSnapshotFetched(Some(
+            crate::provider_usage::ProviderUsageRefreshResult::Failed(_)
+        ))
+    ));
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(2), rx.recv())
+        .await
+        .expect("expected retried provider usage event")
+        .expect("expected retried provider usage event");
+    let AppEvent::ProviderUsageSnapshotFetched(Some(
+        crate::provider_usage::ProviderUsageRefreshResult::Updated(snapshot),
+    )) = event
+    else {
+        panic!("expected updated provider usage snapshot after retry, got {event:?}");
+    };
+    assert_eq!(
+        snapshot,
+        crate::provider_usage::ProviderUsageSnapshot {
+            plans: vec![crate::provider_usage::ProviderUsagePlan {
+                plan_name: None,
+                remaining: Some(7.0),
+                used: None,
+                total: None,
+                unit: Some("USD".to_string()),
+                extra: None,
+            }],
+            error_message: None,
+        }
+    );
+
+    chat.stop_provider_usage_poller();
+}
+
+#[tokio::test]
 async fn provider_usage_poller_starts_when_query_is_enabled() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let _project_root = setup_provider_usage_project(
@@ -10740,10 +10815,11 @@ async fn legacy_remote_usage_ids_map_to_remote_usage() {
 }
 
 #[tokio::test]
-async fn remote_usage_failure_stops_poller_and_records_error() {
+async fn remote_usage_failure_keeps_poller_running_and_records_error_once() {
     let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
-    chat.prefetch_provider_usage();
-    assert!(chat.provider_usage_poller.is_none());
+    chat.provider_usage_poller = Some(tokio::spawn(async move {
+        std::future::pending::<()>().await;
+    }));
 
     chat.on_provider_usage_snapshot(Some(
         crate::provider_usage::ProviderUsageRefreshResult::Failed(
@@ -10751,7 +10827,7 @@ async fn remote_usage_failure_stops_poller_and_records_error() {
         ),
     ));
 
-    assert!(chat.provider_usage_poller.is_none());
+    assert!(chat.provider_usage_poller.is_some());
     assert_eq!(
         chat.provider_usage,
         Some(crate::provider_usage::ProviderUsageSnapshot {
@@ -10767,6 +10843,20 @@ async fn remote_usage_failure_stops_poller_and_records_error() {
         chat.status_line_value_for_item(&StatusLineItem::RemoteUsage),
         None
     );
+
+    chat.on_provider_usage_snapshot(Some(
+        crate::provider_usage::ProviderUsageRefreshResult::Failed(
+            "provider usage script failed: boom".to_string(),
+        ),
+    ));
+
+    let cells = drain_insert_history(&mut rx);
+    assert!(
+        cells.is_empty(),
+        "expected identical remote usage failures to be recorded once"
+    );
+
+    chat.stop_provider_usage_poller();
 }
 
 #[tokio::test]

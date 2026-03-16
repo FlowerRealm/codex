@@ -100,7 +100,7 @@ Status line setup:
 
 - The only provider-usage status item is `remote-usage`
 - Older ids such as `provider-usage-remaining` or `su8-remaining` are normalized to `remote-usage` when read
-- When remote usage refresh fails, Realmx records the error in the transcript, shows it in `/status`, and stops polling until configuration changes restart it
+- When remote usage refresh fails, Realmx records the error in the transcript, shows it in `/status`, and keeps polling so transient failures can recover automatically
 
 ## SQLite State DB
 

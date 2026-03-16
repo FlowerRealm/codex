@@ -2030,14 +2030,20 @@ impl ChatWidget {
             Some(ProviderUsageRefreshResult::Skipped) => {}
             Some(ProviderUsageRefreshResult::Failed(message)) => {
                 let provider_id = self.config.model_provider_id.clone();
+                let error_changed = self
+                    .provider_usage
+                    .as_ref()
+                    .and_then(|snapshot| snapshot.error_message.as_deref())
+                    != Some(message.as_str());
                 self.provider_usage = Some(ProviderUsageSnapshot {
                     plans: Vec::new(),
                     error_message: Some(message.clone()),
                 });
-                self.stop_provider_usage_poller();
-                self.add_error_message(format!(
-                    "Remote usage failed for provider `{provider_id}`: {message}"
-                ));
+                if error_changed {
+                    self.add_error_message(format!(
+                        "Remote usage failed for provider `{provider_id}`: {message}"
+                    ));
+                }
             }
             None => {
                 self.provider_usage = None;
@@ -6261,9 +6267,13 @@ impl ChatWidget {
             return;
         }
 
+        self.spawn_provider_usage_poller(
+            provider_usage_poll_interval(&self.config).unwrap_or_else(|| Duration::from_secs(60)),
+        );
+    }
+
+    fn spawn_provider_usage_poller(&mut self, poll_interval: Duration) {
         let config = self.config.clone();
-        let poll_interval =
-            provider_usage_poll_interval(&config).unwrap_or_else(|| Duration::from_secs(60));
         let auth_manager = Arc::clone(&self.auth_manager);
         let app_event_tx = self.app_event_tx.clone();
 
@@ -6274,12 +6284,7 @@ impl ChatWidget {
                 interval.tick().await;
                 let auth = auth_manager.auth().await;
                 let snapshot = fetch_provider_usage_snapshot(config.clone(), auth).await;
-                let stop_after_send =
-                    matches!(snapshot, Some(ProviderUsageRefreshResult::Failed(_)));
                 app_event_tx.send(AppEvent::ProviderUsageSnapshotFetched(snapshot));
-                if stop_after_send {
-                    break;
-                }
             }
         });
 
