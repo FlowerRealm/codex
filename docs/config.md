@@ -76,9 +76,10 @@ Supported placeholders inside `request` string fields:
 - `{{accountId}}`
 - `{{userId}}`
 
-`{{baseUrl}}` expands to the provider `base_url` exactly as configured. If your provider already
-uses a base URL like `https://example.com/codex/v1`, append only the endpoint suffix such as
-`{{baseUrl}}/usage`; do not repeat `/codex/v1` in `request.url`.
+`{{baseUrl}}` expands to the provider `base_url` exactly as configured. If your
+provider already uses a base URL like `https://example.com/codex/v1`, append
+only the endpoint suffix such as `{{baseUrl}}/usage`; do not repeat
+`/codex/v1` in `request.url`.
 
 Request rules:
 

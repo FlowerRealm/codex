@@ -209,7 +209,7 @@ impl Renderable for ProviderUsageScriptEditorView {
             .map(ratatui::prelude::Stylize::red)
             .unwrap_or_else(|| {
                 if self.delete_pending_confirmation {
-                    "Press Ctrl+R again to confirm deletion.".yellow()
+                    "Press Ctrl+R again to confirm deletion.".cyan()
                 } else if self.has_existing_script {
                     "Project usage.js enables remote usage polling for this provider.".dim()
                 } else {
