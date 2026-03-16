@@ -496,10 +496,13 @@ async fn fetch_scripted_provider_usage_snapshot(
         Ok(request) => request,
         Err(err) => return Some(ProviderUsageRefreshResult::Failed(err)),
     };
-    let request = apply_request_placeholders(
+    let request = match apply_request_placeholders(
         request,
         &script_placeholders(&config.model_provider_id, &config.model_provider, auth),
-    );
+    ) {
+        Ok(request) => request,
+        Err(err) => return Some(ProviderUsageRefreshResult::Failed(err)),
+    };
     if let Some(message) = duplicate_provider_base_path_message(
         config.model_provider.base_url.as_deref(),
         &request.url,
@@ -517,31 +520,16 @@ async fn fetch_scripted_provider_usage_snapshot(
     let client = build_reqwest_client();
     let mut builder = client.request(method, request.url);
 
-    if let Some(headers) = request.headers.as_ref() {
-        let mut header_map =
-            provider_header_map(&config.model_provider, &|name| std::env::var(name));
-        for (name, value) in headers {
-            let name = match HeaderName::try_from(name.as_str()) {
-                Ok(name) => name,
-                Err(err) => {
-                    return Some(ProviderUsageRefreshResult::Failed(format!(
-                        "invalid request header `{name}`: {err}"
-                    )));
-                }
-            };
-            let value = match HeaderValue::try_from(value.as_str()) {
-                Ok(value) => value,
-                Err(err) => {
-                    return Some(ProviderUsageRefreshResult::Failed(format!(
-                        "invalid request header value for `{name}`: {err}"
-                    )));
-                }
-            };
-            header_map.insert(name, value);
-        }
-        if !header_map.is_empty() {
-            builder = builder.headers(header_map);
-        }
+    let header_map = match build_script_request_headers(
+        &config.model_provider,
+        request.headers.as_ref(),
+        &|name| std::env::var(name),
+    ) {
+        Ok(header_map) => header_map,
+        Err(err) => return Some(ProviderUsageRefreshResult::Failed(err)),
+    };
+    if !header_map.is_empty() {
+        builder = builder.headers(header_map);
     }
 
     if let Some(body_text) = request.body_text {
@@ -785,7 +773,7 @@ fn script_placeholders(
     provider: &ModelProviderInfo,
     auth: Option<&CodexAuth>,
 ) -> Vec<(&'static str, String)> {
-    vec![
+    let mut placeholders = vec![
         (
             "{{baseUrl}}",
             provider
@@ -821,17 +809,45 @@ fn script_placeholders(
             "{{accountId}}",
             auth.and_then(CodexAuth::get_account_id).unwrap_or_default(),
         ),
-        (
-            "{{userId}}",
-            auth.and_then(CodexAuth::get_account_id).unwrap_or_default(),
-        ),
-    ]
+    ];
+
+    if let Some(user_id) = auth
+        .and_then(CodexAuth::get_chatgpt_user_id)
+        .filter(|user_id| !user_id.trim().is_empty())
+    {
+        placeholders.push(("{{userId}}", user_id));
+    }
+
+    placeholders
 }
 
 fn apply_request_placeholders(
     mut plan: ScriptRequestPlan,
     placeholders: &[(&str, String)],
-) -> ScriptRequestPlan {
+) -> Result<ScriptRequestPlan, String> {
+    if !placeholders
+        .iter()
+        .any(|(placeholder, _)| *placeholder == "{{userId}}")
+        && (plan.url.contains("{{userId}}")
+            || plan
+                .headers
+                .as_ref()
+                .is_some_and(|headers| headers.values().any(|value| value.contains("{{userId}}")))
+            || plan
+                .body_text
+                .as_ref()
+                .is_some_and(|body_text| body_text.contains("{{userId}}"))
+            || plan.body_json.as_ref().is_some_and(|body_json| {
+                serde_json::to_string(body_json)
+                    .is_ok_and(|serialized| serialized.contains("{{userId}}"))
+            }))
+    {
+        return Err(
+            "request uses `{{userId}}`, but the current auth state does not provide a ChatGPT user id"
+                .to_string(),
+        );
+    }
+
     plan.url = replace_placeholders(&plan.url, placeholders);
     if let Some(headers) = plan.headers.as_mut() {
         for value in headers.values_mut() {
@@ -844,7 +860,7 @@ fn apply_request_placeholders(
     if let Some(body_json) = plan.body_json.as_mut() {
         replace_json_placeholders(body_json, placeholders);
     }
-    plan
+    Ok(plan)
 }
 
 fn duplicate_provider_base_path_message(
@@ -1045,6 +1061,29 @@ where
     }
 
     headers
+}
+
+fn build_script_request_headers<F>(
+    provider: &ModelProviderInfo,
+    request_headers: Option<&HashMap<String, String>>,
+    env_lookup: &F,
+) -> Result<HeaderMap, String>
+where
+    F: Fn(&str) -> Result<String, std::env::VarError>,
+{
+    let mut headers = provider_header_map(provider, env_lookup);
+
+    if let Some(request_headers) = request_headers {
+        for (name, value) in request_headers {
+            let header_name = HeaderName::try_from(name.as_str())
+                .map_err(|err| format!("invalid request header `{name}`: {err}"))?;
+            let header_value = HeaderValue::try_from(value.as_str())
+                .map_err(|err| format!("invalid request header value for `{name}`: {err}"))?;
+            headers.insert(header_name, header_value);
+        }
+    }
+
+    Ok(headers)
 }
 
 fn aggregate_plans(plans: &[ProviderUsagePlan]) -> Option<ProviderUsagePlan> {

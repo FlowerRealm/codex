@@ -81,11 +81,17 @@ provider already uses a base URL like `https://example.com/codex/v1`, append
 only the endpoint suffix such as `{{baseUrl}}/usage`; do not repeat
 `/codex/v1` in `request.url`.
 
+`{{userId}}` is only available when the current ChatGPT auth state includes a
+real ChatGPT user id. If the current auth state does not provide one, scripts
+that reference `{{userId}}` will fail instead of silently substituting the
+workspace `{{accountId}}`.
+
 Request rules:
 
 - `request.url` is required
 - `request.method` is optional and defaults to `GET`
 - `request.headers`, `request.body`, `request.bodyText`, and `request.bodyJson` are optional
+- Provider-level `http_headers` and `env_http_headers` are always attached first, even when `request.headers` is omitted; `request.headers` overrides same-name provider headers
 - `request.bodyText` and `request.bodyJson` are mutually exclusive
 
 `extractor(response)` receives the parsed JSON response body when the response is valid JSON.

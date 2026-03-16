@@ -32,10 +32,10 @@ fn request_placeholders_replace_url_headers_and_body() {
         ("{{bearerToken}}", "chatgpt-token".to_string()),
         ("{{accessToken}}", "chatgpt-token".to_string()),
         ("{{accountId}}", "acct-123".to_string()),
-        ("{{userId}}", "acct-123".to_string()),
+        ("{{userId}}", "user-123".to_string()),
     ];
 
-    let plan = apply_request_placeholders(plan, &placeholders);
+    let plan = apply_request_placeholders(plan, &placeholders).expect("placeholders should apply");
 
     assert_eq!(plan.url, "https://example.test/usage");
     assert_eq!(
@@ -54,8 +54,134 @@ fn request_placeholders_replace_url_headers_and_body() {
         Some(json!({
             "token": "chatgpt-token",
             "provider": "su8",
-            "user": "acct-123",
+            "user": "user-123",
         }))
+    );
+}
+
+#[test]
+fn request_placeholders_reject_missing_user_id_placeholder_value() {
+    let plan = ScriptRequestPlan {
+        method: None,
+        url: "https://example.test/users/{{userId}}/usage".to_string(),
+        headers: None,
+        body_text: None,
+        body_json: None,
+    };
+    let placeholders = vec![("{{accountId}}", "acct-123".to_string())];
+
+    assert_eq!(
+        apply_request_placeholders(plan, &placeholders),
+        Err(
+            "request uses `{{userId}}`, but the current auth state does not provide a ChatGPT user id"
+                .to_string()
+        )
+    );
+}
+
+#[test]
+fn script_request_headers_include_provider_defaults_even_without_script_headers() {
+    let provider = ModelProviderInfo {
+        name: "OpenAI".to_string(),
+        base_url: Some("https://example.test".to_string()),
+        api_key: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: codex_core::WireApi::Responses,
+        query_params: None,
+        http_headers: Some(HashMap::from([(
+            "Authorization".to_string(),
+            "Bearer provider-token".to_string(),
+        )])),
+        env_http_headers: Some(HashMap::from([(
+            "X-API-Key".to_string(),
+            "PROVIDER_API_KEY".to_string(),
+        )])),
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+
+    let headers = build_script_request_headers(&provider, None, &|name| match name {
+        "PROVIDER_API_KEY" => Ok("env-token".to_string()),
+        other => Err(std::env::VarError::NotPresent).map_err(|_| {
+            panic!("unexpected env lookup: {other}");
+        }),
+    })
+    .expect("provider headers should build");
+
+    assert_eq!(
+        headers
+            .get("Authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer provider-token")
+    );
+    assert_eq!(
+        headers
+            .get("X-API-Key")
+            .and_then(|value| value.to_str().ok()),
+        Some("env-token")
+    );
+}
+
+#[test]
+fn script_request_headers_allow_script_values_to_override_provider_defaults() {
+    let provider = ModelProviderInfo {
+        name: "OpenAI".to_string(),
+        base_url: Some("https://example.test".to_string()),
+        api_key: None,
+        env_key: None,
+        env_key_instructions: None,
+        experimental_bearer_token: None,
+        wire_api: codex_core::WireApi::Responses,
+        query_params: None,
+        http_headers: Some(HashMap::from([
+            (
+                "Authorization".to_string(),
+                "Bearer provider-token".to_string(),
+            ),
+            ("X-Provider".to_string(), "provider-default".to_string()),
+        ])),
+        env_http_headers: None,
+        request_max_retries: None,
+        stream_max_retries: None,
+        stream_idle_timeout_ms: None,
+        requires_openai_auth: false,
+        supports_websockets: false,
+    };
+    let request_headers = HashMap::from([
+        (
+            "Authorization".to_string(),
+            "Bearer script-token".to_string(),
+        ),
+        ("X-Script".to_string(), "script-only".to_string()),
+    ]);
+
+    let headers = build_script_request_headers(&provider, Some(&request_headers), &|_| {
+        Err(std::env::VarError::NotPresent)
+    })
+    .expect("script headers should build");
+
+    assert_eq!(
+        headers
+            .get("Authorization")
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer script-token")
+    );
+    assert_eq!(
+        headers
+            .get("X-Provider")
+            .and_then(|value| value.to_str().ok()),
+        Some("provider-default")
+    );
+    assert_eq!(
+        headers
+            .get("X-Script")
+            .and_then(|value| value.to_str().ok()),
+        Some("script-only")
     );
 }
 
