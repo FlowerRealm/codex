@@ -2184,7 +2184,7 @@ async fn provider_usage_poller_retries_after_failed_refresh() {
 }
 
 #[tokio::test]
-async fn provider_usage_poller_is_gated_on_visible_status_items() {
+async fn provider_usage_poller_runs_without_visible_status_item() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(None).await;
     let _project_root = setup_provider_usage_project(
         &mut chat,
@@ -2193,10 +2193,6 @@ async fn provider_usage_poller_is_gated_on_visible_status_items() {
     );
     chat.config.tui_status_line = Some(vec!["model-with-reasoning".to_string()]);
 
-    chat.prefetch_provider_usage();
-    assert!(chat.provider_usage_poller.is_none());
-
-    chat.config.tui_status_line = Some(vec!["remote-usage".to_string()]);
     chat.prefetch_provider_usage();
     assert!(chat.provider_usage_poller.is_some());
     chat.stop_provider_usage_poller();
