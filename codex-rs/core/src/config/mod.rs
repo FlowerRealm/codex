@@ -109,6 +109,8 @@ mod permissions;
 pub mod profile;
 pub mod schema;
 pub mod service;
+pub mod settings_catalog;
+pub mod settings_navigation;
 pub mod types;
 pub use codex_config::Constrained;
 pub use codex_config::ConstraintError;

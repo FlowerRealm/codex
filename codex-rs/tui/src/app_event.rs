@@ -22,6 +22,8 @@ use serde::Deserialize;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::history_cell::HistoryCell;
+use crate::settings::data::SettingsScope;
+use crate::settings::data::SettingsScreen;
 
 use codex_core::ModelProviderInfo;
 use codex_core::config::types::ApprovalsReviewer;
@@ -243,6 +245,34 @@ pub(crate) enum AppEvent {
     /// Restart the selected realtime microphone or speaker locally.
     RestartRealtimeAudioDevice {
         kind: RealtimeAudioDeviceKind,
+    },
+
+    /// Open a /settings screen.
+    OpenSettings {
+        scope: SettingsScope,
+        screen: SettingsScreen,
+        selected_item_key: Option<String>,
+    },
+
+    /// Open the write-scope picker inside /settings.
+    OpenSettingsScopePicker {
+        current_scope: SettingsScope,
+        current_screen: SettingsScreen,
+    },
+
+    /// Open an editor for one config key inside /settings.
+    OpenSettingEditor {
+        key_path: String,
+        scope: SettingsScope,
+        screen: SettingsScreen,
+    },
+
+    /// Persist a value change made from /settings.
+    SaveSettingValue {
+        key_path: String,
+        scope: SettingsScope,
+        screen: SettingsScreen,
+        value: Option<toml::Value>,
     },
 
     /// Open the reasoning selection popup after picking a model.

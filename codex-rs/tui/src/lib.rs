@@ -110,6 +110,7 @@ mod render;
 mod resume_picker;
 mod selection_list;
 mod session_log;
+mod settings;
 mod shimmer;
 mod skills_helpers;
 mod slash_command;

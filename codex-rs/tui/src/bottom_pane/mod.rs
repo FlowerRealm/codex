@@ -76,7 +76,6 @@ mod chat_composer;
 mod chat_composer_history;
 mod command_popup;
 pub mod custom_prompt_view;
-mod experimental_features_view;
 mod file_search_popup;
 mod footer;
 mod list_selection_view;
@@ -147,8 +146,6 @@ use codex_protocol::custom_prompts::CustomPrompt;
 
 use crate::status_indicator_widget::StatusDetailsCapitalization;
 use crate::status_indicator_widget::StatusIndicatorWidget;
-pub(crate) use experimental_features_view::ExperimentalFeatureItem;
-pub(crate) use experimental_features_view::ExperimentalFeaturesView;
 pub(crate) use list_selection_view::SelectionAction;
 pub(crate) use list_selection_view::SelectionItem;
 
@@ -367,6 +364,13 @@ impl BottomPane {
         self.request_redraw();
     }
 
+    fn pop_completed_view(&mut self) {
+        self.view_stack.pop();
+        if self.view_stack.is_empty() {
+            self.on_active_view_complete();
+        }
+    }
+
     /// Forward a key event to the active view or the composer.
     pub fn handle_key_event(&mut self, key_event: KeyEvent) -> InputResult {
         // Do not globally intercept space; only composer handles hold-to-talk.
@@ -407,16 +411,14 @@ impl BottomPane {
             };
 
             if ctrl_c_completed {
-                self.view_stack.pop();
-                self.on_active_view_complete();
+                self.pop_completed_view();
                 if let Some(next_view) = self.view_stack.last()
                     && next_view.is_in_paste_burst()
                 {
                     self.request_redraw_in(ChatComposer::recommended_paste_flush_delay());
                 }
             } else if view_complete {
-                self.view_stack.clear();
-                self.on_active_view_complete();
+                self.pop_completed_view();
             } else if view_in_paste_burst {
                 self.request_redraw_in(ChatComposer::recommended_paste_flush_delay());
             }
@@ -469,8 +471,7 @@ impl BottomPane {
             let event = view.on_ctrl_c();
             if matches!(event, CancellationEvent::Handled) {
                 if view.is_complete() {
-                    self.view_stack.pop();
-                    self.on_active_view_complete();
+                    self.pop_completed_view();
                 }
                 self.show_quit_shortcut_hint(key_hint::ctrl(KeyCode::Char('c')));
                 self.request_redraw();
@@ -491,7 +492,7 @@ impl BottomPane {
         if let Some(view) = self.view_stack.last_mut() {
             let needs_redraw = view.handle_paste(pasted);
             if view.is_complete() {
-                self.on_active_view_complete();
+                self.pop_completed_view();
             }
             if needs_redraw {
                 self.request_redraw();

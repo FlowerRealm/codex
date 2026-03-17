@@ -21,7 +21,6 @@ pub enum SlashCommand {
     ElevateSandbox,
     #[strum(serialize = "sandbox-add-read-dir")]
     SandboxReadRoot,
-    Experimental,
     Skills,
     Review,
     Rename,
@@ -96,7 +95,7 @@ impl SlashCommand {
             SlashCommand::Fast => "toggle Fast mode to enable fastest inference at 2X plan usage",
             SlashCommand::Personality => "choose a communication style for Codex",
             SlashCommand::Realtime => "toggle realtime voice mode (experimental)",
-            SlashCommand::Settings => "configure realtime microphone/speaker",
+            SlashCommand::Settings => "browse and edit all config settings",
             SlashCommand::Plan => "switch to Plan mode",
             SlashCommand::Collab => "change collaboration mode (experimental)",
             SlashCommand::Agent | SlashCommand::MultiAgents => "switch the active agent thread",
@@ -106,7 +105,6 @@ impl SlashCommand {
             SlashCommand::SandboxReadRoot => {
                 "let sandbox read a directory: /sandbox-add-read-dir <absolute_path>"
             }
-            SlashCommand::Experimental => "inspect and toggle feature flags",
             SlashCommand::Mcp => "list configured MCP tools",
             SlashCommand::Apps => "manage apps",
             SlashCommand::Logout => "log out of Codex",
@@ -150,7 +148,6 @@ impl SlashCommand {
             | SlashCommand::Permissions
             | SlashCommand::ElevateSandbox
             | SlashCommand::SandboxReadRoot
-            | SlashCommand::Experimental
             | SlashCommand::Review
             | SlashCommand::Plan
             | SlashCommand::Clear

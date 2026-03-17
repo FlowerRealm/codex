@@ -31,7 +31,7 @@ pub(crate) use legacy::legacy_feature_keys;
 pub enum Stage {
     /// Features that are still under development, not ready for external use
     UnderDevelopment,
-    /// Experimental features made available to users through the `/experimental` menu
+    /// Experimental features made available to users through `/settings`
     Experimental {
         name: &'static str,
         menu_description: &'static str,
@@ -558,7 +558,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Experimental {
             name: "JavaScript REPL",
             menu_description: "Enable a persistent Node-backed JavaScript REPL for interactive website debugging and other inline JavaScript execution capabilities. Requires Node >= v22.22.0 installed.",
-            announcement: "NEW: JavaScript REPL is now available in /experimental. Enable it, then start a new chat or restart Codex to use it.",
+            announcement: "NEW: JavaScript REPL is now available in /settings. Enable it, then start a new chat or restart Codex to use it.",
         },
         default_enabled: false,
     },
@@ -598,7 +598,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Removed,
         default_enabled: false,
     },
-    // Experimental program. Rendered in the `/experimental` menu for users.
+    // Experimental program. Rendered in `/settings` for users.
     FeatureSpec {
         id: Feature::CodexGitCommit,
         key: "codex_git_commit",
@@ -731,7 +731,7 @@ pub const FEATURES: &[FeatureSpec] = &[
         stage: Stage::Experimental {
             name: "Apps",
             menu_description: "Use a connected ChatGPT App using \"$\". Install Apps via /apps command. Restart Codex after enabling.",
-            announcement: "NEW: Use ChatGPT Apps (Connectors) in Codex via $ mentions. Enable in /experimental and restart Codex!",
+            announcement: "NEW: Use ChatGPT Apps (Connectors) in Codex via $ mentions. Enable in /settings and restart Codex!",
         },
         default_enabled: false,
     },
@@ -846,7 +846,7 @@ pub const FEATURES: &[FeatureSpec] = &[
             Stage::Experimental {
                 name: "Prevent sleep while running",
                 menu_description: "Keep your computer awake while Codex is running a thread.",
-                announcement: "NEW: Prevent sleep while running is now available in /experimental.",
+                announcement: "NEW: Prevent sleep while running is now available in /settings.",
             }
         } else {
             Stage::UnderDevelopment

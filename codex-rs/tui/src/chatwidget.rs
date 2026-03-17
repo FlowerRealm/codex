@@ -63,9 +63,7 @@ use codex_core::config::types::Notifications;
 use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::ConfigLayerStackOrdering;
 use codex_core::default_client::build_reqwest_client;
-use codex_core::features::FEATURES;
 use codex_core::features::Feature;
-use codex_core::features::Stage;
 use codex_core::find_thread_name_by_id;
 use codex_core::git_info::current_branch_name;
 use codex_core::git_info::get_git_repo_root;
@@ -236,8 +234,6 @@ use crate::bottom_pane::CancellationEvent;
 use crate::bottom_pane::CollaborationModeIndicator;
 use crate::bottom_pane::ColumnWidthMode;
 use crate::bottom_pane::DOUBLE_PRESS_QUIT_SHORTCUT_ENABLED;
-use crate::bottom_pane::ExperimentalFeatureItem;
-use crate::bottom_pane::ExperimentalFeaturesView;
 use crate::bottom_pane::FeedbackAudience;
 use crate::bottom_pane::InputResult;
 use crate::bottom_pane::LocalImageAttachment;
@@ -4469,10 +4465,13 @@ impl ChatWidget {
                 }
             }
             SlashCommand::Settings => {
-                if !self.realtime_audio_device_selection_enabled() {
-                    return;
-                }
-                self.open_realtime_audio_popup();
+                self.open_settings(
+                    crate::settings::data::SettingsScope::default_for(
+                        self.config.active_profile.as_deref(),
+                    ),
+                    crate::settings::data::SettingsScreen::Root,
+                    None,
+                );
             }
             SlashCommand::Personality => {
                 self.open_personality_popup();
@@ -4564,9 +4563,6 @@ impl ChatWidget {
                 self.add_error_message(
                     "Usage: /sandbox-add-read-dir <absolute-directory-path>".to_string(),
                 );
-            }
-            SlashCommand::Experimental => {
-                self.open_experimental_popup();
             }
             SlashCommand::Quit | SlashCommand::Exit => {
                 self.request_quit_without_confirmation();
@@ -4861,11 +4857,12 @@ impl ChatWidget {
                     tx.send(AppEvent::InsertHistoryCell(Box::new(
                         history_cell::new_error_event("Thread name cannot be empty.".to_string()),
                     )));
-                    return;
+                    return Ok(());
                 };
                 let cell = Self::rename_confirmation_cell(&name, thread_id);
                 tx.send(AppEvent::InsertHistoryCell(Box::new(cell)));
                 tx.send(AppEvent::CodexOp(Op::SetThreadName { name }));
+                Ok(())
             }),
         );
 
@@ -5804,6 +5801,77 @@ impl ChatWidget {
             self.app_event_tx.clone(),
         );
         self.bottom_pane.show_view(Box::new(view));
+    }
+
+    pub(crate) fn open_settings(
+        &mut self,
+        scope: crate::settings::data::SettingsScope,
+        screen: crate::settings::data::SettingsScreen,
+        selected_item_key: Option<String>,
+    ) {
+        match crate::settings::view::build_settings_view_params(
+            &self.config,
+            scope,
+            &screen,
+            selected_item_key.as_deref(),
+        ) {
+            Ok(params) => {
+                let view_id = match &screen {
+                    crate::settings::data::SettingsScreen::Root => {
+                        crate::settings::view::SETTINGS_ROOT_VIEW_ID
+                    }
+                    crate::settings::data::SettingsScreen::Section { .. } => {
+                        crate::settings::view::SETTINGS_SECTION_VIEW_ID
+                    }
+                };
+                if self
+                    .bottom_pane
+                    .selected_index_for_active_view(view_id)
+                    .is_some()
+                {
+                    self.bottom_pane
+                        .replace_selection_view_if_active(view_id, params);
+                } else {
+                    self.bottom_pane.show_selection_view(params);
+                }
+            }
+            Err(err) => {
+                self.add_error_message(format!("Failed to open settings: {err}"));
+            }
+        }
+    }
+
+    pub(crate) fn open_settings_scope_picker(
+        &mut self,
+        current_scope: crate::settings::data::SettingsScope,
+        current_screen: crate::settings::data::SettingsScreen,
+    ) {
+        let params = crate::settings::view::build_settings_scope_picker_params(
+            current_scope,
+            current_screen,
+            self.config.active_profile.as_deref(),
+        );
+        self.bottom_pane.show_selection_view(params);
+    }
+
+    pub(crate) fn open_setting_editor(
+        &mut self,
+        key_path: String,
+        scope: crate::settings::data::SettingsScope,
+        screen: crate::settings::data::SettingsScreen,
+    ) {
+        match crate::settings::view::build_setting_editor_view(
+            &self.config,
+            &key_path,
+            scope,
+            screen,
+            self.app_event_tx.clone(),
+        ) {
+            Ok(view) => self.bottom_pane.show_view(Box::new(view)),
+            Err(err) => {
+                self.add_error_message(format!("Failed to open setting editor: {err}"));
+            }
+        }
     }
 
     fn open_theme_picker(&mut self) {
@@ -7373,63 +7441,6 @@ impl ChatWidget {
             header: Box::new(()),
             ..Default::default()
         });
-    }
-
-    pub(crate) fn experimental_feature_items(&self) -> Vec<ExperimentalFeatureItem> {
-        FEATURES
-            .iter()
-            .filter_map(|spec| {
-                let default_state = if spec.default_enabled { "on" } else { "off" };
-                let (name, description, stage_tag) = match spec.stage {
-                    Stage::Experimental {
-                        name,
-                        menu_description,
-                        ..
-                    } => (
-                        name.to_string(),
-                        format!("{menu_description} Default: {default_state}."),
-                        "experimental".to_string(),
-                    ),
-                    Stage::UnderDevelopment => (
-                        spec.key.to_string(),
-                        format!(
-                            "Under development. Incomplete and may behave unpredictably. Default: {default_state}."
-                        ),
-                        "under development".to_string(),
-                    ),
-                    Stage::Stable => (
-                        spec.key.to_string(),
-                        format!("Stable feature flag. Default: {default_state}."),
-                        "stable".to_string(),
-                    ),
-                    Stage::Deprecated => (
-                        spec.key.to_string(),
-                        format!(
-                            "Deprecated feature flag kept for backward compatibility. Default: {default_state}."
-                        ),
-                        "deprecated".to_string(),
-                    ),
-                    Stage::Removed => return None,
-                };
-
-                Some(ExperimentalFeatureItem {
-                    feature: spec.id,
-                    name,
-                    description,
-                    stage_tag,
-                    enabled: self.config.features.enabled(spec.id),
-                    original_enabled: self.config.features.enabled(spec.id),
-                })
-            })
-            .collect()
-    }
-
-    pub(crate) fn open_experimental_popup(&mut self) {
-        let view = ExperimentalFeaturesView::new(
-            self.experimental_feature_items(),
-            self.app_event_tx.clone(),
-        );
-        self.bottom_pane.show_view(Box::new(view));
     }
 
     fn approval_preset_actions(
@@ -9293,7 +9304,7 @@ impl ChatWidget {
             Box::new(move |prompt: String| {
                 let trimmed = prompt.trim().to_string();
                 if trimmed.is_empty() {
-                    return;
+                    return Ok(());
                 }
                 tx.send(AppEvent::CodexOp(Op::Review {
                     review_request: ReviewRequest {
@@ -9303,6 +9314,7 @@ impl ChatWidget {
                         user_facing_hint: None,
                     },
                 }));
+                Ok(())
             }),
         );
         self.bottom_pane.show_view(Box::new(view));
