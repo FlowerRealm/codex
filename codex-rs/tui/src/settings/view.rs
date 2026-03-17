@@ -865,8 +865,8 @@ include_apply_patch_tool = true
                 .expect("settings view");
 
         assert_snapshot!(
-                                                                                                                    settings_view_focus_summary(&params),
-                                                                                                                    @r"
+                                                                                                                            settings_view_focus_summary(&params),
+                                                                                                                            @r"
 title: Settings
 subtitle: Browse settings sections and edit your user config.toml.
 Write scope: 1
@@ -876,7 +876,7 @@ audio.microphone: 0
 service_tier: 0
 include_apply_patch_tool: 0
 "
-                                                                                                                );
+                                                                                                                        );
     }
 
     #[tokio::test]
@@ -887,8 +887,8 @@ include_apply_patch_tool: 0
                 .expect("settings view");
 
         assert_snapshot!(
-                                                                                    grouped_root_focus_summary(&params),
-                                                                                    @r"
+                                                                                            grouped_root_focus_summary(&params),
+                                                                                            @r"
 title: Settings
 subtitle: Browse settings sections and edit your user config.toml.
 auth: 1
@@ -918,7 +918,7 @@ instructions: 0
 notify: 0
 windows_wsl_setup_acknowledged: 0
 "
-                                                                                );
+                                                                                        );
     }
 
     #[tokio::test]
@@ -935,8 +935,8 @@ windows_wsl_setup_acknowledged: 0
         .expect("features settings section");
 
         assert_snapshot!(
-                                                                            features_section_focus_summary(&params),
-                                                                            @r"
+                                                                                    features_section_focus_summary(&params),
+                                                                                    @r"
 title: Settings / features
 subtitle: Browse and edit settings under `features` in user config.toml.
 Write scope: 1
@@ -945,7 +945,7 @@ Guardian Approvals: 1
 default_mode_request_user_input: 1
 suppress_unstable_features_warning: 1
 "
-                                                                        );
+                                                                                );
     }
 
     #[tokio::test]
@@ -960,8 +960,8 @@ suppress_unstable_features_warning: 1
         .expect("settings view");
 
         assert_snapshot!(
-                                                                                                                    settings_view_focus_summary(&params),
-                                                                                                                    @r"
+                                                                                                                            settings_view_focus_summary(&params),
+                                                                                                                            @r"
 title: Settings
 subtitle: Browse settings sections for the active profile `dev`.
 Write scope: 1
@@ -971,7 +971,7 @@ audio.microphone: 0
 service_tier: 0
 include_apply_patch_tool: 0
 "
-                                                                                                                );
+                                                                                                                        );
     }
 
     #[tokio::test]
@@ -988,8 +988,8 @@ include_apply_patch_tool: 0
         .expect("settings section");
 
         assert_snapshot!(
-                                                                                                                    section_view_focus_summary(&params),
-                                                                                                                    @r"
+                                                                                                                            section_view_focus_summary(&params),
+                                                                                                                            @r"
 title: Settings / audio
 subtitle: Browse and edit settings under `audio` in user config.toml.
 Write scope: 1
@@ -997,7 +997,7 @@ Edit this section: 1
 microphone: 1
 speaker: 1
 "
-                                                                                                                );
+                                                                                                                        );
     }
 
     #[tokio::test]
@@ -1014,8 +1014,8 @@ speaker: 1
         .expect("model settings section");
 
         assert_snapshot!(
-                                                                                    model_section_focus_summary(&params),
-                                                                                    @r"
+                                                                                            model_section_focus_summary(&params),
+                                                                                            @r"
 title: Settings / model
 subtitle: Browse and edit settings under `model` in user config.toml.
 Write scope: 1
@@ -1026,7 +1026,7 @@ reasoning_effort: 1
 review_model: 1
 service_tier: 1
 "
-                                                                                );
+                                                                                        );
     }
 
     #[tokio::test]
@@ -1043,8 +1043,8 @@ service_tier: 1
         .expect("auth settings section");
 
         assert_snapshot!(
-                                                                                    auth_section_focus_summary(&params),
-                                                                                    @r"
+                                                                                            auth_section_focus_summary(&params),
+                                                                                            @r"
 title: Settings / auth
 subtitle: Browse and edit settings under `auth` in user config.toml.
 Write scope: 1
@@ -1052,7 +1052,7 @@ chatgpt_workspace_id: 1
 credentials_store: 1
 login_method: 1
 "
-                                                                                );
+                                                                                        );
     }
 
     #[tokio::test]
@@ -1069,8 +1069,8 @@ login_method: 1
         .expect("notifications settings section");
 
         assert_snapshot!(
-                                                                            notifications_section_focus_summary(&params),
-                                                                            @r"
+                                                                                    notifications_section_focus_summary(&params),
+                                                                                    @r"
 title: Settings / notifications
 subtitle: Browse and edit settings under `notifications` in user config.toml.
 Write scope: 1
@@ -1080,7 +1080,7 @@ hide_full_access_warning: 1
 notification_method: 1
 notifications: 1
 "
-                                                                        );
+                                                                                );
     }
 
     #[tokio::test]
@@ -1097,8 +1097,8 @@ notifications: 1
         .expect("telemetry settings section");
 
         assert_snapshot!(
-                                                                            telemetry_section_focus_summary(&params),
-                                                                            @r"
+                                                                                    telemetry_section_focus_summary(&params),
+                                                                                    @r"
 title: Settings / telemetry
 subtitle: Browse and edit settings under `telemetry` in user config.toml.
 Write scope: 1
@@ -1109,7 +1109,7 @@ feedback.enabled: 1
 otel: 1
 otel.environment: 1
 "
-                                                                        );
+                                                                                );
     }
 
     #[tokio::test]
@@ -1126,8 +1126,8 @@ otel.environment: 1
         .expect("tui settings section");
 
         assert_snapshot!(
-                                                                            tui_section_focus_summary(&params),
-                                                                            @r"
+                                                                                    tui_section_focus_summary(&params),
+                                                                                    @r"
 title: Settings / tui
 subtitle: Browse and edit settings under `tui` in user config.toml.
 Write scope: 1
@@ -1137,7 +1137,7 @@ file_opener: 1
 theme: 1
 notification_method: 0
 "
-                                                                        );
+                                                                                );
     }
 
     #[tokio::test]
@@ -1154,8 +1154,8 @@ notification_method: 0
         .expect("tools settings section");
 
         assert_snapshot!(
-                                                                                    tools_section_focus_summary(&params),
-                                                                                    @r"
+                                                                                            tools_section_focus_summary(&params),
+                                                                                            @r"
 title: Settings / tools
 subtitle: Browse and edit `tools` for the active profile `dev`.
 Write scope: 1
@@ -1168,7 +1168,7 @@ web_search: 1
 web_search_mode: 1
 zsh_path: 1
 "
-                                                                                );
+                                                                                        );
     }
 
     #[tokio::test]
@@ -1185,8 +1185,8 @@ zsh_path: 1
         .expect("voice settings section");
 
         assert_snapshot!(
-                                                                            voice_section_focus_summary(&params),
-                                                                            @r"
+                                                                                    voice_section_focus_summary(&params),
+                                                                                    @r"
 title: Settings / voice
 subtitle: Browse and edit settings under `voice` in user config.toml.
 Write scope: 1
@@ -1196,7 +1196,7 @@ realtime: 1
 realtime_ws_model: 1
 version: 1
 "
-                                                                        );
+                                                                                );
     }
 
     #[tokio::test]
@@ -1213,8 +1213,8 @@ version: 1
         .expect("global tools settings section");
 
         assert_snapshot!(
-                                                                                    tools_global_section_focus_summary(&params),
-                                                                                    @r"
+                                                                                            tools_global_section_focus_summary(&params),
+                                                                                            @r"
 title: Settings / tools
 subtitle: Browse and edit settings under `tools` in user config.toml.
 Write scope: 1
@@ -1222,6 +1222,6 @@ Edit this section: 1
 background_terminal_max_timeout: 1
 tool_output_token_limit: 1
 "
-                                                                                );
+                                                                                        );
     }
 }
