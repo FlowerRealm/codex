@@ -863,20 +863,9 @@ include_apply_patch_tool = true
         let params =
             build_settings_view_params(&config, SettingsScope::Global, &SettingsScreen::Root, None)
                 .expect("settings view");
+        let summary = settings_view_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                                                            settings_view_focus_summary(&params),
-                                                                                                                            @r"
-title: Settings
-subtitle: Browse settings sections and edit your user config.toml.
-Write scope: 1
-model: 1
-audio: 0
-audio.microphone: 0
-service_tier: 0
-include_apply_patch_tool: 0
-"
-                                                                                                                        );
+        assert_snapshot!("settings_view_global", summary);
     }
 
     #[tokio::test]
@@ -885,40 +874,9 @@ include_apply_patch_tool: 0
         let params =
             build_settings_view_params(&config, SettingsScope::Global, &SettingsScreen::Root, None)
                 .expect("settings view");
+        let summary = grouped_root_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                            grouped_root_focus_summary(&params),
-                                                                                            @r"
-title: Settings
-subtitle: Browse settings sections and edit your user config.toml.
-auth: 1
-extensions: 1
-features: 1
-mcp: 1
-model: 1
-notifications: 1
-permissions: 1
-profile: 1
-project: 1
-prompting: 1
-reasoning_output: 1
-storage: 1
-telemetry: 1
-tools: 1
-tui: 1
-voice: 1
-windows: 1
-agents: 1
-memories: 1
-audio: 0
-check_for_update_on_startup: 0
-commit_attribution: 0
-disable_paste_burst: 0
-instructions: 0
-notify: 0
-windows_wsl_setup_acknowledged: 0
-"
-                                                                                        );
+        assert_snapshot!("settings_view_global_manual_grouping", summary);
     }
 
     #[tokio::test]
@@ -933,19 +891,9 @@ windows_wsl_setup_acknowledged: 0
             None,
         )
         .expect("features settings section");
+        let summary = features_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                    features_section_focus_summary(&params),
-                                                                                    @r"
-title: Settings / features
-subtitle: Browse and edit settings under `features` in user config.toml.
-Write scope: 1
-JavaScript REPL: 1
-Guardian Approvals: 1
-default_mode_request_user_input: 1
-suppress_unstable_features_warning: 1
-"
-                                                                                );
+        assert_snapshot!("settings_features_section", summary);
     }
 
     #[tokio::test]
@@ -958,20 +906,9 @@ suppress_unstable_features_warning: 1
             None,
         )
         .expect("settings view");
+        let summary = settings_view_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                                                            settings_view_focus_summary(&params),
-                                                                                                                            @r"
-title: Settings
-subtitle: Browse settings sections for the active profile `dev`.
-Write scope: 1
-model: 1
-audio: 0
-audio.microphone: 0
-service_tier: 0
-include_apply_patch_tool: 0
-"
-                                                                                                                        );
+        assert_snapshot!("settings_view_profile", summary);
     }
 
     #[tokio::test]
@@ -986,18 +923,9 @@ include_apply_patch_tool: 0
             None,
         )
         .expect("settings section");
+        let summary = section_view_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                                                            section_view_focus_summary(&params),
-                                                                                                                            @r"
-title: Settings / audio
-subtitle: Browse and edit settings under `audio` in user config.toml.
-Write scope: 1
-Edit this section: 1
-microphone: 1
-speaker: 1
-"
-                                                                                                                        );
+        assert_snapshot!("settings_section", summary);
     }
 
     #[tokio::test]
@@ -1012,21 +940,9 @@ speaker: 1
             None,
         )
         .expect("model settings section");
+        let summary = model_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                            model_section_focus_summary(&params),
-                                                                                            @r"
-title: Settings / model
-subtitle: Browse and edit settings under `model` in user config.toml.
-Write scope: 1
-model: 1
-plan_mode_reasoning_effort: 1
-provider: 1
-reasoning_effort: 1
-review_model: 1
-service_tier: 1
-"
-                                                                                        );
+        assert_snapshot!("settings_model_section", summary);
     }
 
     #[tokio::test]
@@ -1041,18 +957,9 @@ service_tier: 1
             None,
         )
         .expect("auth settings section");
+        let summary = auth_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                            auth_section_focus_summary(&params),
-                                                                                            @r"
-title: Settings / auth
-subtitle: Browse and edit settings under `auth` in user config.toml.
-Write scope: 1
-chatgpt_workspace_id: 1
-credentials_store: 1
-login_method: 1
-"
-                                                                                        );
+        assert_snapshot!("settings_auth_section", summary);
     }
 
     #[tokio::test]
@@ -1067,20 +974,9 @@ login_method: 1
             None,
         )
         .expect("notifications settings section");
+        let summary = notifications_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                    notifications_section_focus_summary(&params),
-                                                                                    @r"
-title: Settings / notifications
-subtitle: Browse and edit settings under `notifications` in user config.toml.
-Write scope: 1
-check_for_update_on_startup: 1
-external_command: 1
-hide_full_access_warning: 1
-notification_method: 1
-notifications: 1
-"
-                                                                                );
+        assert_snapshot!("settings_notifications_section", summary);
     }
 
     #[tokio::test]
@@ -1095,21 +991,9 @@ notifications: 1
             None,
         )
         .expect("telemetry settings section");
+        let summary = telemetry_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                    telemetry_section_focus_summary(&params),
-                                                                                    @r"
-title: Settings / telemetry
-subtitle: Browse and edit settings under `telemetry` in user config.toml.
-Write scope: 1
-analytics: 1
-analytics.enabled: 1
-feedback: 1
-feedback.enabled: 1
-otel: 1
-otel.environment: 1
-"
-                                                                                );
+        assert_snapshot!("settings_telemetry_section", summary);
     }
 
     #[tokio::test]
@@ -1124,20 +1008,9 @@ otel.environment: 1
             None,
         )
         .expect("tui settings section");
+        let summary = tui_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                    tui_section_focus_summary(&params),
-                                                                                    @r"
-title: Settings / tui
-subtitle: Browse and edit settings under `tui` in user config.toml.
-Write scope: 1
-Edit this section: 1
-disable_paste_burst: 1
-file_opener: 1
-theme: 1
-notification_method: 0
-"
-                                                                                );
+        assert_snapshot!("settings_tui_section", summary);
     }
 
     #[tokio::test]
@@ -1152,23 +1025,9 @@ notification_method: 0
             None,
         )
         .expect("tools settings section");
+        let summary = tools_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                            tools_section_focus_summary(&params),
-                                                                                            @r"
-title: Settings / tools
-subtitle: Browse and edit `tools` for the active profile `dev`.
-Write scope: 1
-Edit this section: 1
-js_repl_node_module_dirs: 1
-js_repl_node_path: 1
-tools_view_image: 1
-view_image: 1
-web_search: 1
-web_search_mode: 1
-zsh_path: 1
-"
-                                                                                        );
+        assert_snapshot!("settings_tools_section", summary);
     }
 
     #[tokio::test]
@@ -1183,20 +1042,9 @@ zsh_path: 1
             None,
         )
         .expect("voice settings section");
+        let summary = voice_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                    voice_section_focus_summary(&params),
-                                                                                    @r"
-title: Settings / voice
-subtitle: Browse and edit settings under `voice` in user config.toml.
-Write scope: 1
-audio: 1
-microphone: 1
-realtime: 1
-realtime_ws_model: 1
-version: 1
-"
-                                                                                );
+        assert_snapshot!("settings_voice_section", summary);
     }
 
     #[tokio::test]
@@ -1211,17 +1059,8 @@ version: 1
             None,
         )
         .expect("global tools settings section");
+        let summary = tools_global_section_focus_summary(&params);
 
-        assert_snapshot!(
-                                                                                            tools_global_section_focus_summary(&params),
-                                                                                            @r"
-title: Settings / tools
-subtitle: Browse and edit settings under `tools` in user config.toml.
-Write scope: 1
-Edit this section: 1
-background_terminal_max_timeout: 1
-tool_output_token_limit: 1
-"
-                                                                                        );
+        assert_snapshot!("settings_tools_global_section", summary);
     }
 }
