@@ -7606,14 +7606,14 @@ async fn settings_popup_renders_root_items() {
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Root,
-        None,
+        /*selected_item_key*/ None,
     );
 
     let popup = render_bottom_popup(&chat, 88);
     assert!(popup.contains("Settings"));
     assert!(popup.contains("Write scope"));
     assert!(popup.contains("model"));
-    assert!(popup.contains("audio"));
+    assert!(popup.contains("voice"));
     assert!(!popup.contains("audio.microphone"));
 }
 
@@ -7623,19 +7623,18 @@ async fn settings_section_popup_renders_child_items() {
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Root,
-        None,
+        /*selected_item_key*/ None,
     );
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Section {
-            section_key: "audio".to_string(),
+            section_key: "voice".to_string(),
         },
-        None,
+        /*selected_item_key*/ None,
     );
 
     let popup = render_bottom_popup(&chat, 88);
-    assert!(popup.contains("Settings / audio"));
-    assert!(popup.contains("Edit this section"));
+    assert!(popup.contains("Settings / voice"));
     assert!(popup.contains("microphone"));
 }
 
@@ -7645,16 +7644,16 @@ async fn settings_section_escape_returns_to_settings_root() {
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Root,
-        None,
+        /*selected_item_key*/ None,
     );
     let root_popup = render_bottom_popup(&chat, 88);
 
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Section {
-            section_key: "audio".to_string(),
+            section_key: "voice".to_string(),
         },
-        None,
+        /*selected_item_key*/ None,
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
 
@@ -7667,14 +7666,14 @@ async fn settings_editor_escape_returns_to_settings_section() {
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Root,
-        None,
+        /*selected_item_key*/ None,
     );
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Section {
-            section_key: "audio".to_string(),
+            section_key: "voice".to_string(),
         },
-        None,
+        /*selected_item_key*/ None,
     );
     let section_popup = render_bottom_popup(&chat, 88);
 
@@ -7682,7 +7681,7 @@ async fn settings_editor_escape_returns_to_settings_section() {
         "audio.microphone".to_string(),
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Section {
-            section_key: "audio".to_string(),
+            section_key: "voice".to_string(),
         },
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));

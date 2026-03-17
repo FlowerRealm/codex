@@ -1091,13 +1091,13 @@ microphone = "Desk Mic"
             build_settings_root_items(&schema, &config, &origins, None, SettingsScope::Global);
 
         assert_eq!(items.len(), 2);
-        assert_eq!(items[0].item_key, "audio");
-        assert_eq!(items[0].label, "audio");
+        assert_eq!(items[0].item_key, "model");
+        assert_eq!(items[1].item_key, "voice");
+        assert_eq!(items[1].label, "voice");
         assert!(matches!(
-            &items[0].kind,
+            &items[1].kind,
             SettingsRootItemKind::Section { .. }
         ));
-        assert_eq!(items[1].item_key, "model");
     }
 
     #[test]
