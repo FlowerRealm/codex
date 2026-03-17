@@ -105,6 +105,8 @@ mod notifications;
 pub mod onboarding;
 mod oss_selection;
 mod pager_overlay;
+mod provider_usage;
+mod provider_usage_compat;
 pub mod public_widgets;
 mod render;
 mod resume_picker;
