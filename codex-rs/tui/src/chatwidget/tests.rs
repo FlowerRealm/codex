@@ -7694,7 +7694,10 @@ async fn settings_editor_escape_returns_to_settings_section() {
 #[tokio::test]
 async fn realtime_audio_selection_popup_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2-codex")).await;
-    chat.open_realtime_audio_popup();
+    chat.open_realtime_audio_device_selection_with_names(
+        RealtimeAudioDeviceKind::Microphone,
+        vec!["Built-in Mic".to_string(), "USB Mic".to_string()],
+    );
 
     let popup = render_bottom_popup(&chat, 80);
     assert_snapshot!("realtime_audio_selection_popup", popup);
@@ -7704,7 +7707,10 @@ async fn realtime_audio_selection_popup_snapshot() {
 #[tokio::test]
 async fn realtime_audio_selection_popup_narrow_snapshot() {
     let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2-codex")).await;
-    chat.open_realtime_audio_popup();
+    chat.open_realtime_audio_device_selection_with_names(
+        RealtimeAudioDeviceKind::Microphone,
+        vec!["Built-in Mic".to_string(), "USB Mic".to_string()],
+    );
 
     let popup = render_bottom_popup(&chat, 56);
     assert_snapshot!("realtime_audio_selection_popup_narrow", popup);

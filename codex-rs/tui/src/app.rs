@@ -2963,9 +2963,6 @@ impl App {
             AppEvent::UpdatePersonality(personality) => {
                 self.on_update_personality(personality);
             }
-            AppEvent::OpenRealtimeAudioDeviceSelection { kind } => {
-                self.chat_widget.open_realtime_audio_device_selection(kind);
-            }
             AppEvent::OpenSettings {
                 scope,
                 screen,

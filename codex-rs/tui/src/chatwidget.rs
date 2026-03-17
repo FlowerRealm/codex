@@ -1104,10 +1104,6 @@ impl ChatWidget {
             && cfg!(not(target_os = "linux"))
     }
 
-    fn realtime_audio_device_selection_enabled(&self) -> bool {
-        self.realtime_conversation_enabled() && cfg!(feature = "voice-input")
-    }
-
     /// Synchronize the bottom-pane "task running" indicator with the current lifecycles.
     ///
     /// The bottom pane only has one running flag, but this module treats it as a derived state of
@@ -3746,9 +3742,6 @@ impl ChatWidget {
             .set_realtime_conversation_enabled(widget.realtime_conversation_enabled());
         widget
             .bottom_pane
-            .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
-        widget
-            .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
@@ -3937,9 +3930,6 @@ impl ChatWidget {
             .set_realtime_conversation_enabled(widget.realtime_conversation_enabled());
         widget
             .bottom_pane
-            .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
-        widget
-            .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
         widget
             .bottom_pane
@@ -4118,9 +4108,6 @@ impl ChatWidget {
         widget
             .bottom_pane
             .set_realtime_conversation_enabled(widget.realtime_conversation_enabled());
-        widget
-            .bottom_pane
-            .set_audio_device_selection_enabled(widget.realtime_audio_device_selection_enabled());
         widget
             .bottom_pane
             .set_status_line_enabled(!widget.configured_status_line_items().is_empty());
@@ -5882,6 +5869,20 @@ impl ChatWidget {
         scope: crate::settings::data::SettingsScope,
         screen: crate::settings::data::SettingsScreen,
     ) {
+        if cfg!(all(not(target_os = "linux"), feature = "voice-input")) {
+            match key_path.as_str() {
+                "audio" | "audio.microphone" => {
+                    self.open_realtime_audio_device_selection(RealtimeAudioDeviceKind::Microphone);
+                    return;
+                }
+                "audio.speaker" => {
+                    self.open_realtime_audio_device_selection(RealtimeAudioDeviceKind::Speaker);
+                    return;
+                }
+                _ => {}
+            }
+        }
+
         match crate::settings::view::build_setting_editor_view(
             &self.config,
             &key_path,
@@ -6553,39 +6554,6 @@ impl ChatWidget {
 
         self.bottom_pane.show_selection_view(SelectionViewParams {
             header: Box::new(header),
-            footer_hint: Some(standard_popup_hint_line()),
-            items,
-            ..Default::default()
-        });
-    }
-
-    pub(crate) fn open_realtime_audio_popup(&mut self) {
-        let items = [
-            RealtimeAudioDeviceKind::Microphone,
-            RealtimeAudioDeviceKind::Speaker,
-        ]
-        .into_iter()
-        .map(|kind| {
-            let description = Some(format!(
-                "Current: {}",
-                self.current_realtime_audio_selection_label(kind)
-            ));
-            let actions: Vec<SelectionAction> = vec![Box::new(move |tx| {
-                tx.send(AppEvent::OpenRealtimeAudioDeviceSelection { kind });
-            })];
-            SelectionItem {
-                name: kind.title().to_string(),
-                description,
-                actions,
-                dismiss_on_select: true,
-                ..Default::default()
-            }
-        })
-        .collect();
-
-        self.bottom_pane.show_selection_view(SelectionViewParams {
-            title: Some("Settings".to_string()),
-            subtitle: Some("Configure settings for Codex.".to_string()),
             footer_hint: Some(standard_popup_hint_line()),
             items,
             ..Default::default()
@@ -8062,8 +8030,6 @@ impl ChatWidget {
             let realtime_conversation_enabled = self.realtime_conversation_enabled();
             self.bottom_pane
                 .set_realtime_conversation_enabled(realtime_conversation_enabled);
-            self.bottom_pane
-                .set_audio_device_selection_enabled(self.realtime_audio_device_selection_enabled());
             if !realtime_conversation_enabled && self.realtime_conversation.is_live() {
                 self.request_realtime_conversation_close(Some(
                     "Realtime voice mode was closed because the feature was disabled.".to_string(),
@@ -8176,6 +8142,13 @@ impl ChatWidget {
         self.config.service_tier
     }
 
+    fn current_realtime_audio_device_name(&self, kind: RealtimeAudioDeviceKind) -> Option<String> {
+        match kind {
+            RealtimeAudioDeviceKind::Microphone => self.config.realtime_audio.microphone.clone(),
+            RealtimeAudioDeviceKind::Speaker => self.config.realtime_audio.speaker.clone(),
+        }
+    }
+
     pub(crate) fn should_show_fast_status(
         &self,
         model: &str,
@@ -8265,18 +8238,6 @@ impl ChatWidget {
 
     pub(crate) fn realtime_conversation_is_live(&self) -> bool {
         self.realtime_conversation.is_active()
-    }
-
-    fn current_realtime_audio_device_name(&self, kind: RealtimeAudioDeviceKind) -> Option<String> {
-        match kind {
-            RealtimeAudioDeviceKind::Microphone => self.config.realtime_audio.microphone.clone(),
-            RealtimeAudioDeviceKind::Speaker => self.config.realtime_audio.speaker.clone(),
-        }
-    }
-
-    fn current_realtime_audio_selection_label(&self, kind: RealtimeAudioDeviceKind) -> String {
-        self.current_realtime_audio_device_name(kind)
-            .unwrap_or_else(|| "System default".to_string())
     }
 
     fn sync_fast_command_enabled(&mut self) {

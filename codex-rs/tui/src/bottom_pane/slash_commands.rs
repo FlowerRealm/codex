@@ -17,7 +17,6 @@ pub(crate) struct BuiltinCommandFlags {
     pub(crate) fast_command_enabled: bool,
     pub(crate) personality_command_enabled: bool,
     pub(crate) realtime_conversation_enabled: bool,
-    pub(crate) audio_device_selection_enabled: bool,
     pub(crate) allow_elevate_sandbox: bool,
 }
 
@@ -65,7 +64,6 @@ mod tests {
             fast_command_enabled: true,
             personality_command_enabled: true,
             realtime_conversation_enabled: true,
-            audio_device_selection_enabled: true,
             allow_elevate_sandbox: true,
         }
     }
@@ -118,7 +116,6 @@ mod tests {
     fn settings_command_stays_visible_when_realtime_is_disabled() {
         let mut flags = all_enabled_flags();
         flags.realtime_conversation_enabled = false;
-        flags.audio_device_selection_enabled = false;
         assert_eq!(
             find_builtin_command("settings", flags),
             Some(SlashCommand::Settings)

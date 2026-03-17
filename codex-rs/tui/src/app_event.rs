@@ -227,11 +227,6 @@ pub(crate) enum AppEvent {
         service_tier: Option<ServiceTier>,
     },
 
-    /// Open the device picker for a realtime microphone or speaker.
-    OpenRealtimeAudioDeviceSelection {
-        kind: RealtimeAudioDeviceKind,
-    },
-
     /// Persist the selected realtime microphone or speaker to top-level config.
     #[cfg_attr(
         any(target_os = "linux", not(feature = "voice-input")),

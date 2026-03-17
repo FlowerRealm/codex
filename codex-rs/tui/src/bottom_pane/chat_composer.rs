@@ -406,7 +406,6 @@ pub(crate) struct ChatComposer {
     fast_command_enabled: bool,
     personality_command_enabled: bool,
     realtime_conversation_enabled: bool,
-    audio_device_selection_enabled: bool,
     windows_degraded_sandbox_active: bool,
     status_line_value: Option<Line<'static>>,
     status_line_enabled: bool,
@@ -444,7 +443,6 @@ impl ChatComposer {
             fast_command_enabled: self.fast_command_enabled,
             personality_command_enabled: self.personality_command_enabled,
             realtime_conversation_enabled: self.realtime_conversation_enabled,
-            audio_device_selection_enabled: self.audio_device_selection_enabled,
             allow_elevate_sandbox: self.windows_degraded_sandbox_active,
         }
     }
@@ -528,7 +526,6 @@ impl ChatComposer {
             fast_command_enabled: false,
             personality_command_enabled: false,
             realtime_conversation_enabled: false,
-            audio_device_selection_enabled: false,
             windows_degraded_sandbox_active: false,
             status_line_value: None,
             status_line_enabled: false,
@@ -614,10 +611,6 @@ impl ChatComposer {
 
     pub fn set_realtime_conversation_enabled(&mut self, enabled: bool) {
         self.realtime_conversation_enabled = enabled;
-    }
-
-    pub fn set_audio_device_selection_enabled(&mut self, enabled: bool) {
-        self.audio_device_selection_enabled = enabled;
     }
 
     /// Compatibility shim for tests that still toggle the removed steer mode flag.
@@ -3480,7 +3473,6 @@ impl ChatComposer {
                     let fast_command_enabled = self.fast_command_enabled;
                     let personality_command_enabled = self.personality_command_enabled;
                     let realtime_conversation_enabled = self.realtime_conversation_enabled;
-                    let audio_device_selection_enabled = self.audio_device_selection_enabled;
                     let mut command_popup = CommandPopup::new(
                         self.custom_prompts.clone(),
                         CommandPopupFlags {
@@ -3489,7 +3481,6 @@ impl ChatComposer {
                             fast_command_enabled,
                             personality_command_enabled,
                             realtime_conversation_enabled,
-                            audio_device_selection_enabled,
                             windows_degraded_sandbox_active: self.windows_degraded_sandbox_active,
                         },
                     );

@@ -2101,7 +2101,7 @@ impl ChatWidget {
         };
         self.add_to_history(history_cell::new_info_event(
             format!("Using skill ({invocation_type}): {name}"),
-            None,
+            /*hint*/ None,
         ));
         self.request_redraw();
     }
