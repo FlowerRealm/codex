@@ -7612,9 +7612,8 @@ async fn settings_popup_renders_root_items() {
     let popup = render_bottom_popup(&chat, 88);
     assert!(popup.contains("Settings"));
     assert!(popup.contains("Write scope"));
-    assert!(popup.contains("model"));
-    assert!(popup.contains("voice"));
     assert!(!popup.contains("audio.microphone"));
+    assert!(!popup.contains("service_tier"));
 }
 
 #[tokio::test]
@@ -7671,17 +7670,17 @@ async fn settings_editor_escape_returns_to_settings_section() {
     chat.open_settings(
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Section {
-            section_key: "voice".to_string(),
+            section_key: "model".to_string(),
         },
         /*selected_item_key*/ None,
     );
     let section_popup = render_bottom_popup(&chat, 88);
 
     chat.open_setting_editor(
-        "audio.microphone".to_string(),
+        "service_tier".to_string(),
         crate::settings::data::SettingsScope::Global,
         crate::settings::data::SettingsScreen::Section {
-            section_key: "voice".to_string(),
+            section_key: "model".to_string(),
         },
     );
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
