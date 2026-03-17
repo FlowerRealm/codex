@@ -445,7 +445,7 @@ mod tests {
     fn features_section_groups_feature_flags_and_warning_controls() {
         let section = settings_section("features").expect("features section");
         assert!(section.matches_key("features.js_repl"));
-        assert!(section.matches_key("features.smart_approvals"));
+        assert!(section.matches_key("features.guardian_approval"));
         assert!(section.matches_key("suppress_unstable_features_warning"));
         assert!(!section.matches_key("experimental_use_unified_exec_tool"));
         assert_eq!(

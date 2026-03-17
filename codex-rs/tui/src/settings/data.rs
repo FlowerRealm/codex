@@ -2551,11 +2551,11 @@ suppress_unstable_features_warning = true
         let config: toml::Value = toml::from_str(
             r#"
 [features]
-smart_approvals = true
+guardian_approval = true
 "#,
         )
         .expect("config");
-        let origins = HashMap::from([("features.smart_approvals".to_string(), metadata())]);
+        let origins = HashMap::from([("features.guardian_approval".to_string(), metadata())]);
         let mut effective_features = Features::with_defaults();
         effective_features.set_enabled(Feature::GuardianApproval, true);
 
@@ -2568,17 +2568,17 @@ smart_approvals = true
             SettingsScope::Global,
             "features",
         );
-        let smart_approvals = section_view
+        let guardian_approval = section_view
             .items
             .iter()
-            .find(|item| item.item_key == "features.smart_approvals")
-            .expect("missing Smart Approvals feature");
+            .find(|item| item.item_key == "features.guardian_approval")
+            .expect("missing Guardian Approvals feature");
 
         assert!(section_view.section_item.is_none());
-        assert_eq!(smart_approvals.setting.label, "Smart Approvals");
-        assert_eq!(smart_approvals.setting.display_value, "true");
+        assert_eq!(guardian_approval.setting.label, "Guardian Approvals");
+        assert_eq!(guardian_approval.setting.display_value, "true");
         assert!(
-            smart_approvals
+            guardian_approval
                 .setting
                 .description
                 .as_deref()
@@ -2592,11 +2592,11 @@ smart_approvals = true
         let config: toml::Value = toml::from_str(
             r#"
 [features]
-smart_approvals = true
+guardian_approval = true
 "#,
         )
         .expect("config");
-        let origins = HashMap::from([("features.smart_approvals".to_string(), metadata())]);
+        let origins = HashMap::from([("features.guardian_approval".to_string(), metadata())]);
         let mut effective_features = Features::with_defaults();
         effective_features.set_enabled(Feature::GuardianApproval, true);
 
@@ -2608,12 +2608,12 @@ smart_approvals = true
             Some("dev"),
             SettingsScope::ActiveProfile,
         );
-        let smart_approvals = find_setting_item(&items, "features.smart_approvals");
+        let guardian_approval = find_setting_item(&items, "features.guardian_approval");
 
-        assert_eq!(smart_approvals.display_value, "true");
-        assert_eq!(smart_approvals.category_tag.as_deref(), Some("user"));
+        assert_eq!(guardian_approval.display_value, "true");
+        assert_eq!(guardian_approval.category_tag.as_deref(), Some("user"));
         assert!(
-            smart_approvals
+            guardian_approval
                 .selected_description
                 .as_deref()
                 .is_some_and(|description| description.contains("Inherited from global config."))
