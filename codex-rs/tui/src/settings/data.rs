@@ -139,13 +139,15 @@ pub(crate) fn build_setting_items_with_features(
         .filter(|node| supports_scope(node, scope))
         .map(|node| build_setting_item(node, effective_config, origins, active_profile, scope))
         .collect::<Vec<_>>();
-    items.extend(build_feature_setting_items(
-        effective_config,
-        origins,
-        effective_features,
-        active_profile,
-        scope,
-    ));
+    if effective_features.is_some() || origins.keys().any(|key| key.starts_with("features.")) {
+        items.extend(build_feature_setting_items(
+            effective_config,
+            origins,
+            effective_features,
+            active_profile,
+            scope,
+        ));
+    }
     items
 }
 

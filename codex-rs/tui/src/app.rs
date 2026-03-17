@@ -1126,17 +1126,26 @@ impl App {
             return;
         }
 
-        self.config = next_config;
-        if let Err(err) = self.refresh_in_memory_config_from_disk().await {
-            tracing::error!(
-                error = %err,
-                "persisted feature flags but failed to refresh config from disk"
-            );
-            self.chat_widget.add_error_message(format!(
-                "Updated feature flags, but failed to refresh config: {err}"
-            ));
-            return;
+        let current_cwd = self.config.cwd.clone();
+        match self.rebuild_config_for_cwd(current_cwd).await {
+            Ok(mut refreshed_config) => {
+                self.apply_runtime_policy_overrides(&mut refreshed_config);
+                next_config.config_layer_stack = refreshed_config.config_layer_stack;
+                next_config.active_profile = refreshed_config.active_profile;
+            }
+            Err(err) => {
+                tracing::warn!(
+                    error = %err,
+                    "persisted feature flags but failed to refresh config metadata from disk"
+                );
+                self.chat_widget.add_error_message(format!(
+                    "Updated feature flags, but failed to refresh config metadata: {err}"
+                ));
+            }
         }
+
+        self.config = next_config;
+        self.active_profile = self.config.active_profile.clone();
         self.chat_widget.set_config(self.config.clone());
         for (feature, effective_enabled) in feature_updates_to_apply {
             self.chat_widget

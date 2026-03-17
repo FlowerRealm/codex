@@ -819,24 +819,23 @@ async fn load_project_layers(
 
     let mut layers = Vec::new();
     for dir in dirs {
-        let dot_codex = dir.join(PROJECT_CONFIG_DIR_NAME);
-        if !tokio::fs::metadata(&dot_codex)
-            .await
-            .map(|meta| meta.is_dir())
-            .unwrap_or(false)
+        let layer_dir = AbsolutePathBuf::from_absolute_path(dir)?;
+        let decision = trust_context.decision_for_dir(&layer_dir);
+        let Some(project_config_dir) =
+            prepare_project_config_dir(dir, decision.is_trusted()).await?
+        else {
+            continue;
+        };
+
+        let project_config_abs = AbsolutePathBuf::from_absolute_path(&project_config_dir)?;
+        let project_config_normalized = normalize_path(project_config_abs.as_path())
+            .unwrap_or_else(|_| project_config_abs.to_path_buf());
+        if project_config_abs == codex_home_abs
+            || project_config_normalized == codex_home_normalized
         {
             continue;
         }
-
-        let layer_dir = AbsolutePathBuf::from_absolute_path(dir)?;
-        let decision = trust_context.decision_for_dir(&layer_dir);
-        let dot_codex_abs = AbsolutePathBuf::from_absolute_path(&dot_codex)?;
-        let dot_codex_normalized =
-            normalize_path(dot_codex_abs.as_path()).unwrap_or_else(|_| dot_codex_abs.to_path_buf());
-        if dot_codex_abs == codex_home_abs || dot_codex_normalized == codex_home_normalized {
-            continue;
-        }
-        let config_file = dot_codex_abs.join(CONFIG_TOML_FILE)?;
+        let config_file = project_config_abs.join(CONFIG_TOML_FILE)?;
         match tokio::fs::read_to_string(&config_file).await {
             Ok(contents) => {
                 let config: TomlValue = match toml::from_str(&contents) {
@@ -853,7 +852,7 @@ async fn load_project_layers(
                         }
                         layers.push(project_layer_entry(
                             trust_context,
-                            &dot_codex_abs,
+                            &project_config_abs,
                             &layer_dir,
                             TomlValue::Table(toml::map::Map::new()),
                             /*config_toml_exists*/ true,
@@ -862,10 +861,10 @@ async fn load_project_layers(
                     }
                 };
                 let config =
-                    resolve_relative_paths_in_config_toml(config, dot_codex_abs.as_path())?;
+                    resolve_relative_paths_in_config_toml(config, project_config_abs.as_path())?;
                 let entry = project_layer_entry(
                     trust_context,
-                    &dot_codex_abs,
+                    &project_config_abs,
                     &layer_dir,
                     config,
                     /*config_toml_exists*/ true,
@@ -879,7 +878,7 @@ async fn load_project_layers(
                     // that are significant in the overall ConfigLayerStack.
                     layers.push(project_layer_entry(
                         trust_context,
-                        &dot_codex_abs,
+                        &project_config_abs,
                         &layer_dir,
                         TomlValue::Table(toml::map::Map::new()),
                         /*config_toml_exists*/ false,

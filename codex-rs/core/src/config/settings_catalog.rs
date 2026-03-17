@@ -47,9 +47,14 @@ pub struct SettingsCatalog {
 }
 
 pub fn settings_catalog() -> Result<SettingsCatalog> {
-    let root_nodes =
-        collect_schema_nodes(crate::config::schema::config_schema(), Some("profiles"))?;
-    let profile_nodes = collect_schema_nodes(crate::config::schema::profile_schema(), None)?;
+    let root_nodes = collect_schema_nodes(
+        crate::config::schema::config_schema(),
+        /*skipped_root_key*/ Some("profiles"),
+    )?;
+    let profile_nodes = collect_schema_nodes(
+        crate::config::schema::profile_schema(),
+        /*skipped_root_key*/ None,
+    )?;
     merge_catalog_nodes(root_nodes, profile_nodes)
 }
 
@@ -157,7 +162,11 @@ fn merge_catalog_nodes(
     }
     for (key_path, profile_node) in profile_nodes {
         if let std::collections::btree_map::Entry::Vacant(entry) = merged.entry(key_path.clone()) {
-            entry.insert(merge_catalog_node(key_path, None, Some(&profile_node))?);
+            entry.insert(merge_catalog_node(
+                key_path,
+                /*root_node*/ None,
+                Some(&profile_node),
+            )?);
         }
     }
 
