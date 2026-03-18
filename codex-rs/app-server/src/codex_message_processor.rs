@@ -504,8 +504,8 @@ impl CodexMessageProcessor {
             } else {
                 None
             },
-            provider_id: self.config.model_provider_id.clone(),
-            provider_name: self.config.model_provider.name.clone(),
+            provider_id: Some(self.config.model_provider_id.clone()),
+            provider_name: Some(self.config.model_provider.name.clone()),
         }
     }
 
@@ -1235,8 +1235,8 @@ impl CodexMessageProcessor {
                             let payload_v2 = AccountUpdatedNotification {
                                 auth_mode: auth.as_ref().map(CodexAuth::api_auth_mode),
                                 plan_type: auth.as_ref().and_then(CodexAuth::account_plan_type),
-                                provider_id,
-                                provider_name,
+                                provider_id: Some(provider_id),
+                                provider_name: Some(provider_name),
                             };
                             outgoing_clone
                                 .send_server_notification(ServerNotification::AccountUpdated(
@@ -1358,8 +1358,8 @@ impl CodexMessageProcessor {
                                 AccountUpdatedNotification {
                                     auth_mode: Some(AuthMode::Oauth),
                                     plan_type: None,
-                                    provider_id: provider_id_for_task.clone(),
-                                    provider_name: provider_name_for_task.clone(),
+                                    provider_id: Some(provider_id_for_task.clone()),
+                                    provider_name: Some(provider_name_for_task.clone()),
                                 },
                             ))
                             .await;
@@ -1597,8 +1597,8 @@ impl CodexMessageProcessor {
                 let payload_v2 = AccountUpdatedNotification {
                     auth_mode: current_auth_method,
                     plan_type: None,
-                    provider_id: self.config.model_provider_id.clone(),
-                    provider_name: self.config.model_provider.name.clone(),
+                    provider_id: Some(self.config.model_provider_id.clone()),
+                    provider_name: Some(self.config.model_provider.name.clone()),
                 };
                 self.outgoing
                     .send_server_notification(ServerNotification::AccountUpdated(payload_v2))
@@ -1688,9 +1688,9 @@ impl CodexMessageProcessor {
             let response = GetAccountResponse {
                 account: None,
                 requires_openai_auth,
-                requires_auth,
-                provider_id,
-                provider_name,
+                requires_auth: Some(requires_auth),
+                provider_id: Some(provider_id),
+                provider_name: Some(provider_name),
             };
             self.outgoing.send_response(request_id, response).await;
             return;
@@ -1729,9 +1729,9 @@ impl CodexMessageProcessor {
         let response = GetAccountResponse {
             account,
             requires_openai_auth,
-            requires_auth,
-            provider_id,
-            provider_name,
+            requires_auth: Some(requires_auth),
+            provider_id: Some(provider_id),
+            provider_name: Some(provider_name),
         };
         self.outgoing.send_response(request_id, response).await;
     }

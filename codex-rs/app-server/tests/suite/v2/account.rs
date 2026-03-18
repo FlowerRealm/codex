@@ -251,9 +251,9 @@ async fn set_auth_token_updates_account_and_notifies() -> Result<()> {
                 plan_type: AccountPlanType::Pro,
             }),
             requires_openai_auth: true,
-            requires_auth: true,
-            provider_id: "openai".to_string(),
-            provider_name: "OpenAI".to_string(),
+            requires_auth: Some(true),
+            provider_id: Some("openai".to_string()),
+            provider_name: Some("OpenAI".to_string()),
         }
     );
 
@@ -321,9 +321,9 @@ async fn account_read_refresh_token_is_noop_in_external_mode() -> Result<()> {
                 plan_type: AccountPlanType::Pro,
             }),
             requires_openai_auth: true,
-            requires_auth: true,
-            provider_id: "openai".to_string(),
-            provider_name: "OpenAI".to_string(),
+            requires_auth: Some(true),
+            provider_id: Some("openai".to_string()),
+            provider_name: Some("OpenAI".to_string()),
         }
     );
 
@@ -1182,9 +1182,9 @@ async fn get_account_with_api_key() -> Result<()> {
     let expected = GetAccountResponse {
         account: Some(Account::ApiKey {}),
         requires_openai_auth: true,
-        requires_auth: true,
-        provider_id: "openai".to_string(),
-        provider_name: "OpenAI".to_string(),
+        requires_auth: Some(true),
+        provider_id: Some("openai".to_string()),
+        provider_name: Some("OpenAI".to_string()),
     };
     assert_eq!(received, expected);
     Ok(())
@@ -1220,9 +1220,9 @@ async fn get_account_when_auth_not_required() -> Result<()> {
     let expected = GetAccountResponse {
         account: None,
         requires_openai_auth: false,
-        requires_auth: false,
-        provider_id: "mock_provider".to_string(),
-        provider_name: "Mock provider for test".to_string(),
+        requires_auth: Some(false),
+        provider_id: Some("mock_provider".to_string()),
+        provider_name: Some("Mock provider for test".to_string()),
     };
     assert_eq!(received, expected);
     Ok(())
@@ -1273,9 +1273,9 @@ async fn legacy_custom_provider_uses_api_key_login_only() -> Result<()> {
         GetAccountResponse {
             account: Some(Account::ApiKey {}),
             requires_openai_auth: false,
-            requires_auth: true,
-            provider_id: "mock_provider".to_string(),
-            provider_name: "Mock provider for test".to_string(),
+            requires_auth: Some(true),
+            provider_id: Some("mock_provider".to_string()),
+            provider_name: Some("Mock provider for test".to_string()),
         }
     );
     Ok(())
@@ -1382,9 +1382,9 @@ async fn get_account_with_chatgpt() -> Result<()> {
             plan_type: AccountPlanType::Pro,
         }),
         requires_openai_auth: true,
-        requires_auth: true,
-        provider_id: "openai".to_string(),
-        provider_name: "OpenAI".to_string(),
+        requires_auth: Some(true),
+        provider_id: Some("openai".to_string()),
+        provider_name: Some("OpenAI".to_string()),
     };
     assert_eq!(received, expected);
     Ok(())
@@ -1427,9 +1427,9 @@ async fn get_account_with_chatgpt_missing_plan_claim_returns_unknown() -> Result
             plan_type: AccountPlanType::Unknown,
         }),
         requires_openai_auth: true,
-        requires_auth: true,
-        provider_id: "openai".to_string(),
-        provider_name: "OpenAI".to_string(),
+        requires_auth: Some(true),
+        provider_id: Some("openai".to_string()),
+        provider_name: Some("OpenAI".to_string()),
     };
     assert_eq!(received, expected);
     Ok(())

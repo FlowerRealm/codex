@@ -58,16 +58,18 @@
           ]
         },
         "providerId": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         },
         "providerName": {
-          "type": "string"
+          "type": [
+            "string",
+            "null"
+          ]
         }
       },
-      "required": [
-        "providerId",
-        "providerName"
-      ],
       "type": "object"
     },
     "AgentMessageDeltaNotification": {

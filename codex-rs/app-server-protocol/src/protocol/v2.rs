@@ -1717,9 +1717,9 @@ pub struct GetAccountParams {
 pub struct GetAccountResponse {
     pub account: Option<Account>,
     pub requires_openai_auth: bool,
-    pub requires_auth: bool,
-    pub provider_id: String,
-    pub provider_name: String,
+    pub requires_auth: Option<bool>,
+    pub provider_id: Option<String>,
+    pub provider_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default, JsonSchema, TS)]
@@ -3559,8 +3559,8 @@ pub struct Thread {
 pub struct AccountUpdatedNotification {
     pub auth_mode: Option<AuthMode>,
     pub plan_type: Option<PlanType>,
-    pub provider_id: String,
-    pub provider_name: String,
+    pub provider_id: Option<String>,
+    pub provider_name: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]

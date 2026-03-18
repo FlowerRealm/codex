@@ -751,8 +751,8 @@ mod tests {
         let notification = ServerNotification::AccountUpdated(AccountUpdatedNotification {
             auth_mode: Some(AuthMode::ApiKey),
             plan_type: None,
-            provider_id: "openai".to_string(),
-            provider_name: "OpenAI".to_string(),
+            provider_id: Some("openai".to_string()),
+            provider_name: Some("OpenAI".to_string()),
         });
 
         let jsonrpc_notification = OutgoingMessage::AppServerNotification(notification);

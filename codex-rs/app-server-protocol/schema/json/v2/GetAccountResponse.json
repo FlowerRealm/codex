@@ -88,22 +88,28 @@
       ]
     },
     "providerId": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "providerName": {
-      "type": "string"
+      "type": [
+        "string",
+        "null"
+      ]
     },
     "requiresAuth": {
-      "type": "boolean"
+      "type": [
+        "boolean",
+        "null"
+      ]
     },
     "requiresOpenaiAuth": {
       "type": "boolean"
     }
   },
   "required": [
-    "providerId",
-    "providerName",
-    "requiresAuth",
     "requiresOpenaiAuth"
   ],
   "title": "GetAccountResponse",
