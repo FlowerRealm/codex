@@ -1797,8 +1797,25 @@ fn test_model_catalog(config: &Config) -> Arc<ModelCatalog> {
 }
 
 // --- Helpers for tests that need direct construction and event draining ---
+enum TestAnimationMode {
+    UseConfigDefault,
+    Disabled,
+}
+
 async fn make_chatwidget_manual(
     model_override: Option<&str>,
+) -> (
+    ChatWidget,
+    tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
+    tokio::sync::mpsc::UnboundedReceiver<Op>,
+) {
+    make_chatwidget_manual_with_animation_mode(model_override, TestAnimationMode::UseConfigDefault)
+        .await
+}
+
+async fn make_chatwidget_manual_with_animation_mode(
+    model_override: Option<&str>,
+    animation_mode: TestAnimationMode,
 ) -> (
     ChatWidget,
     tokio::sync::mpsc::UnboundedReceiver<AppEvent>,
@@ -1813,6 +1830,9 @@ async fn make_chatwidget_manual(
         .unwrap_or_else(|| codex_core::test_support::get_model_offline(cfg.model.as_deref()));
     if let Some(model) = model_override {
         cfg.model = Some(model.to_string());
+    }
+    if matches!(animation_mode, TestAnimationMode::Disabled) {
+        cfg.animations = false;
     }
     let prevent_idle_sleep = cfg.features.enabled(Feature::PreventIdleSleep);
     let session_telemetry = test_session_telemetry(&cfg, resolved_model.as_str());
@@ -9346,7 +9366,8 @@ async fn status_widget_and_approval_modal_snapshot() {
 
 #[tokio::test]
 async fn guardian_denied_exec_renders_warning_and_denied_request() {
-    let (mut chat, mut rx, _op_rx) = make_chatwidget_manual(None).await;
+    let (mut chat, mut rx, _op_rx) =
+        make_chatwidget_manual_with_animation_mode(None, TestAnimationMode::Disabled).await;
     chat.show_welcome_banner = false;
     let action = serde_json::json!({
         "tool": "shell",
