@@ -56,8 +56,18 @@
               "type": "null"
             }
           ]
+        },
+        "providerId": {
+          "type": "string"
+        },
+        "providerName": {
+          "type": "string"
         }
       },
+      "required": [
+        "providerId",
+        "providerName"
+      ],
       "type": "object"
     },
     "AgentMessageDeltaNotification": {
@@ -362,6 +372,13 @@
           "description": "OpenAI API key provided by the caller and stored by Codex.",
           "enum": [
             "apikey"
+          ],
+          "type": "string"
+        },
+        {
+          "description": "Provider OAuth managed by Codex and persisted by Codex.",
+          "enum": [
+            "oauth"
           ],
           "type": "string"
         },

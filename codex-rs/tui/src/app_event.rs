@@ -67,6 +67,13 @@ pub(crate) struct ConnectorsSnapshot {
     pub(crate) connectors: Vec<AppInfo>,
 }
 
+#[derive(Debug)]
+pub(crate) enum ProviderApiKeyInput {
+    KeepExisting,
+    Set(String),
+    Clear,
+}
+
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug)]
 pub(crate) enum AppEvent {
@@ -200,8 +207,10 @@ pub(crate) enum AppEvent {
 
     /// Persist a custom provider entry under `[model_providers.<id>]`.
     PersistModelProvider {
+        original_id: Option<String>,
         id: String,
         provider: ModelProviderInfo,
+        api_key_input: ProviderApiKeyInput,
     },
 
     /// Remove a custom provider entry.

@@ -15,6 +15,8 @@ pub use oauth::OAuthCredentialsStoreMode;
 pub use oauth::StoredOAuthTokens;
 pub use oauth::WrappedOAuthTokenResponse;
 pub use oauth::delete_oauth_tokens;
+pub use oauth::has_oauth_tokens;
+pub use oauth::load_oauth_access_token;
 pub(crate) use oauth::load_oauth_tokens;
 pub use oauth::save_oauth_tokens;
 pub use perform_oauth_login::OAuthProviderError;

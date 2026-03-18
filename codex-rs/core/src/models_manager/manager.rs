@@ -8,6 +8,7 @@ use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
 use crate::error::Result as CoreResult;
 use crate::model_provider_info::ModelProviderInfo;
+use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::models_manager::model_info;
@@ -17,6 +18,7 @@ use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::openai_models::ModelsResponse;
+use codex_rmcp_client::OAuthCredentialsStoreMode;
 use http::HeaderMap;
 use std::fmt;
 use std::path::PathBuf;
@@ -76,9 +78,12 @@ pub struct ModelsManager {
     catalog_mode: CatalogMode,
     collaboration_modes_config: CollaborationModesConfig,
     auth_manager: Arc<AuthManager>,
+    codex_home: PathBuf,
     etag: RwLock<Option<String>>,
     cache_manager: ModelsCacheManager,
+    provider_id: String,
     provider: ModelProviderInfo,
+    oauth_store_mode: OAuthCredentialsStoreMode,
 }
 
 impl ModelsManager {
@@ -98,7 +103,9 @@ impl ModelsManager {
             auth_manager,
             model_catalog,
             collaboration_modes_config,
+            OPENAI_PROVIDER_ID.to_string(),
             ModelProviderInfo::create_openai_provider(/* base_url */ None),
+            OAuthCredentialsStoreMode::default(),
         )
     }
 
@@ -108,7 +115,9 @@ impl ModelsManager {
         auth_manager: Arc<AuthManager>,
         model_catalog: Option<ModelsResponse>,
         collaboration_modes_config: CollaborationModesConfig,
+        provider_id: String,
         provider: ModelProviderInfo,
+        oauth_store_mode: OAuthCredentialsStoreMode,
     ) -> Self {
         let cache_path = codex_home.join(MODEL_CACHE_FILE);
         let cache_manager = ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
@@ -128,9 +137,12 @@ impl ModelsManager {
             catalog_mode,
             collaboration_modes_config,
             auth_manager,
+            codex_home,
             etag: RwLock::new(None),
             cache_manager,
+            provider_id,
             provider,
+            oauth_store_mode,
         }
     }
 
@@ -332,7 +344,14 @@ impl ModelsManager {
         let auth = self.auth_manager.auth().await;
         let auth_mode = self.auth_manager.auth_mode();
         let api_provider = self.provider.to_api_provider(auth_mode)?;
-        let api_auth = auth_provider_from_auth(auth.clone(), &self.provider)?;
+        let api_auth = auth_provider_from_auth(
+            &self.codex_home,
+            &self.provider_id,
+            auth.clone(),
+            &self.provider,
+            self.oauth_store_mode,
+        )
+        .await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
         let client = ModelsClient::new(transport, api_provider, api_auth);
 
@@ -435,7 +454,9 @@ impl ModelsManager {
             auth_manager,
             None,
             CollaborationModesConfig::default(),
+            "test-provider".to_string(),
             provider,
+            OAuthCredentialsStoreMode::File,
         )
     }
 

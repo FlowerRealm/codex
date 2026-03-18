@@ -2323,8 +2323,11 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state_db: None,
         model_client: ModelClient::new(
             Some(auth_manager.clone()),
+            config.codex_home.clone(),
             conversation_id,
+            config.model_provider_id.clone(),
             session_configuration.provider.clone(),
+            config.mcp_oauth_credentials_store_mode,
             session_configuration.session_source.clone(),
             config.model_verbosity,
             ws_version_from_features(config.as_ref()),
@@ -3035,8 +3038,11 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         state_db: None,
         model_client: ModelClient::new(
             Some(Arc::clone(&auth_manager)),
+            config.codex_home.clone(),
             conversation_id,
+            config.model_provider_id.clone(),
             session_configuration.provider.clone(),
+            config.mcp_oauth_credentials_store_mode,
             session_configuration.session_source.clone(),
             config.model_verbosity,
             ws_version_from_features(config.as_ref()),

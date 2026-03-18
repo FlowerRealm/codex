@@ -2,6 +2,7 @@ use super::*;
 use crate::CodexAuth;
 use crate::auth::AuthCredentialsStoreMode;
 use crate::config::ConfigBuilder;
+use crate::model_provider_info::ModelProviderAuthStrategy;
 use crate::model_provider_info::WireApi;
 use chrono::Utc;
 use codex_protocol::openai_models::ModelsResponse;
@@ -61,6 +62,8 @@ fn provider_for(base_url: String) -> ModelProviderInfo {
     ModelProviderInfo {
         name: "mock".into(),
         base_url: Some(base_url),
+        auth_strategy: ModelProviderAuthStrategy::None,
+        oauth: None,
         api_key: None,
         env_key: None,
         env_key_instructions: None,
