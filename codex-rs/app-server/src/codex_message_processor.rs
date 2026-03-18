@@ -284,6 +284,7 @@ use codex_protocol::protocol::USER_MESSAGE_BEGIN;
 use codex_protocol::protocol::W3cTraceContext;
 use codex_protocol::user_input::MAX_USER_INPUT_TEXT_CHARS;
 use codex_protocol::user_input::UserInput as CoreInputItem;
+use codex_rmcp_client::OauthLoginCancelHandle;
 use codex_rmcp_client::perform_oauth_login_return_url;
 use codex_state::StateRuntime;
 use codex_state::ThreadMetadataBuilder;
@@ -344,8 +345,12 @@ struct ThreadListFilters {
 const LOGIN_CHATGPT_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const APP_LIST_LOAD_TIMEOUT: Duration = Duration::from_secs(90);
 enum ActiveLoginKind {
-    Chatgpt { shutdown_handle: ShutdownHandle },
-    OAuth,
+    Chatgpt {
+        shutdown_handle: ShutdownHandle,
+    },
+    OAuth {
+        cancel_handle: OauthLoginCancelHandle,
+    },
 }
 
 struct ActiveLogin {
@@ -389,8 +394,9 @@ fn convert_remote_product_surface(product_surface: ApiProductSurface) -> RemoteS
 
 impl Drop for ActiveLogin {
     fn drop(&mut self) {
-        if let ActiveLoginKind::Chatgpt { shutdown_handle } = &self.kind {
-            shutdown_handle.shutdown();
+        match &self.kind {
+            ActiveLoginKind::Chatgpt { shutdown_handle } => shutdown_handle.shutdown(),
+            ActiveLoginKind::OAuth { cancel_handle } => cancel_handle.cancel(),
         }
     }
 }
@@ -1322,11 +1328,12 @@ impl CodexMessageProcessor {
             Ok(handle) => {
                 let login_id = Uuid::new_v4();
                 let auth_url = handle.authorization_url().to_string();
+                let cancel_handle = handle.cancel_handle();
                 {
                     let mut guard = self.active_login.lock().await;
                     *guard = Some(ActiveLogin {
                         login_id,
-                        kind: ActiveLoginKind::OAuth,
+                        kind: ActiveLoginKind::OAuth { cancel_handle },
                     });
                 }
 
@@ -1341,6 +1348,14 @@ impl CodexMessageProcessor {
                             Ok(Err(err)) => (false, Some(format!("OAuth login failed: {err:#}"))),
                             Err(_elapsed) => (false, Some("OAuth login timed out".to_string())),
                         };
+
+                    let still_active = {
+                        let guard = active_login.lock().await;
+                        guard.as_ref().map(|login| login.login_id) == Some(login_id)
+                    };
+                    if !still_active {
+                        return;
+                    }
 
                     outgoing_clone
                         .send_server_notification(ServerNotification::AccountLoginCompleted(
@@ -1392,15 +1407,12 @@ impl CodexMessageProcessor {
         }
     }
 
-    async fn cancel_login_chatgpt_common(
+    async fn cancel_login_common(
         &mut self,
         login_id: Uuid,
     ) -> std::result::Result<(), CancelLoginError> {
         let mut guard = self.active_login.lock().await;
-        if guard.as_ref().map(|l| l.login_id) == Some(login_id)
-            && let Some(active) = guard.as_ref()
-            && matches!(active.kind, ActiveLoginKind::Chatgpt { .. })
-        {
+        if guard.as_ref().map(|l| l.login_id) == Some(login_id) {
             if let Some(active) = guard.take() {
                 drop(active);
             }
@@ -1417,7 +1429,7 @@ impl CodexMessageProcessor {
         let login_id = params.login_id;
         match Uuid::parse_str(&login_id) {
             Ok(uuid) => {
-                let status = match self.cancel_login_chatgpt_common(uuid).await {
+                let status = match self.cancel_login_common(uuid).await {
                     Ok(()) => CancelLoginAccountStatus::Canceled,
                     Err(CancelLoginError::NotFound) => CancelLoginAccountStatus::NotFound,
                 };

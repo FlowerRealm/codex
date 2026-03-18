@@ -20,6 +20,7 @@ pub use oauth::load_oauth_access_token;
 pub(crate) use oauth::load_oauth_tokens;
 pub use oauth::save_oauth_tokens;
 pub use perform_oauth_login::OAuthProviderError;
+pub use perform_oauth_login::OauthLoginCancelHandle;
 pub use perform_oauth_login::OauthLoginHandle;
 pub use perform_oauth_login::perform_oauth_login;
 pub use perform_oauth_login::perform_oauth_login_return_url;
