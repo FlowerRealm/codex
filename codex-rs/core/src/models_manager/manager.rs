@@ -3,6 +3,7 @@ use crate::api_bridge::auth_provider_from_auth;
 use crate::api_bridge::map_api_error;
 use crate::auth::AuthManager;
 use crate::auth::AuthMode;
+use crate::auth::CodexAuth;
 use crate::config::Config;
 use crate::default_client::build_reqwest_client;
 use crate::error::CodexErr;
@@ -12,8 +13,15 @@ use crate::model_provider_info::OPENAI_PROVIDER_ID;
 use crate::models_manager::collaboration_mode_presets::CollaborationModesConfig;
 use crate::models_manager::collaboration_mode_presets::builtin_collaboration_mode_presets;
 use crate::models_manager::model_info;
+use crate::response_debug_context::extract_response_debug_context;
+use crate::response_debug_context::telemetry_transport_error_message;
+use crate::util::FeedbackRequestTags;
+use crate::util::emit_feedback_request_tags;
 use codex_api::ModelsClient;
+use codex_api::RequestTelemetry;
 use codex_api::ReqwestTransport;
+use codex_api::TransportError;
+use codex_otel::TelemetryAuthMode;
 use codex_protocol::config_types::CollaborationModeMask;
 use codex_protocol::openai_models::ModelInfo;
 use codex_protocol::openai_models::ModelPreset;
@@ -34,6 +42,87 @@ use tracing::instrument;
 const MODEL_CACHE_FILE: &str = "models_cache.json";
 const DEFAULT_MODEL_CACHE_TTL: Duration = Duration::from_secs(300);
 const MODELS_REFRESH_TIMEOUT: Duration = Duration::from_secs(5);
+const MODELS_ENDPOINT: &str = "/models";
+
+pub const GPT_5_4_MODEL: &str = "gpt-5.4";
+pub const GPT_5_4_ONE_MILLION_MODEL: &str = "gpt-5.4[1m]";
+const GPT_5_4_ONE_MILLION_CONTEXT_WINDOW: i64 = 1_050_000;
+
+#[derive(Clone)]
+struct ModelsRequestTelemetry {
+    auth_mode: Option<String>,
+    auth_header_attached: bool,
+    auth_header_name: Option<&'static str>,
+}
+
+impl RequestTelemetry for ModelsRequestTelemetry {
+    fn on_request(
+        &self,
+        attempt: u64,
+        status: Option<http::StatusCode>,
+        error: Option<&TransportError>,
+        duration: Duration,
+    ) {
+        let success = status.is_some_and(|code| code.is_success()) && error.is_none();
+        let error_message = error.map(telemetry_transport_error_message);
+        let response_debug = error
+            .map(extract_response_debug_context)
+            .unwrap_or_default();
+        let status = status.map(|status| status.as_u16());
+        tracing::event!(
+            target: "codex_otel.log_only",
+            tracing::Level::INFO,
+            event.name = "codex.api_request",
+            duration_ms = %duration.as_millis(),
+            http.response.status_code = status,
+            success = success,
+            error.message = error_message.as_deref(),
+            attempt = attempt,
+            endpoint = MODELS_ENDPOINT,
+            auth.header_attached = self.auth_header_attached,
+            auth.header_name = self.auth_header_name,
+            auth.request_id = response_debug.request_id.as_deref(),
+            auth.cf_ray = response_debug.cf_ray.as_deref(),
+            auth.error = response_debug.auth_error.as_deref(),
+            auth.error_code = response_debug.auth_error_code.as_deref(),
+            auth.mode = self.auth_mode.as_deref(),
+        );
+        tracing::event!(
+            target: "codex_otel.trace_safe",
+            tracing::Level::INFO,
+            event.name = "codex.api_request",
+            duration_ms = %duration.as_millis(),
+            http.response.status_code = status,
+            success = success,
+            error.message = error_message.as_deref(),
+            attempt = attempt,
+            endpoint = MODELS_ENDPOINT,
+            auth.header_attached = self.auth_header_attached,
+            auth.header_name = self.auth_header_name,
+            auth.request_id = response_debug.request_id.as_deref(),
+            auth.cf_ray = response_debug.cf_ray.as_deref(),
+            auth.error = response_debug.auth_error.as_deref(),
+            auth.error_code = response_debug.auth_error_code.as_deref(),
+            auth.mode = self.auth_mode.as_deref(),
+        );
+        emit_feedback_request_tags(&FeedbackRequestTags {
+            endpoint: MODELS_ENDPOINT,
+            auth_header_attached: self.auth_header_attached,
+            auth_header_name: self.auth_header_name,
+            auth_mode: self.auth_mode.as_deref(),
+            auth_retry_after_unauthorized: None,
+            auth_recovery_mode: None,
+            auth_recovery_phase: None,
+            auth_connection_reused: None,
+            auth_request_id: response_debug.request_id.as_deref(),
+            auth_cf_ray: response_debug.cf_ray.as_deref(),
+            auth_error: response_debug.auth_error.as_deref(),
+            auth_error_code: response_debug.auth_error_code.as_deref(),
+            auth_recovery_followup_success: None,
+            auth_recovery_followup_status: None,
+        });
+    }
+}
 
 /// Strategy for refreshing available models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -127,7 +216,7 @@ impl ModelsManager {
             CatalogMode::Default
         };
         let remote_models = model_catalog
-            .map(|catalog| catalog.models)
+            .map(|catalog| Self::with_derived_aliases(catalog.models))
             .unwrap_or_else(|| {
                 Self::load_remote_models_from_file()
                     .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"))
@@ -283,6 +372,30 @@ impl ModelsManager {
         model_info::with_config_overrides(model_info, config)
     }
 
+    fn with_derived_aliases(mut models: Vec<ModelInfo>) -> Vec<ModelInfo> {
+        let Some(base_index) = models.iter().position(|model| model.slug == GPT_5_4_MODEL) else {
+            return models;
+        };
+        if models
+            .iter()
+            .any(|model| model.slug == GPT_5_4_ONE_MILLION_MODEL)
+        {
+            return models;
+        }
+        let mut alias = models[base_index].clone();
+        alias.slug = GPT_5_4_ONE_MILLION_MODEL.to_string();
+        alias.api_model_slug = Some(GPT_5_4_MODEL.to_string());
+        alias.display_name = GPT_5_4_ONE_MILLION_MODEL.to_string();
+        alias.description = Some("Latest frontier agentic coding model with 1M context.".into());
+        alias.context_window = Some(GPT_5_4_ONE_MILLION_CONTEXT_WINDOW);
+        models.push(alias);
+        models
+    }
+
+    pub(crate) fn with_derived_aliases_for_tests(models: Vec<ModelInfo>) -> Vec<ModelInfo> {
+        Self::with_derived_aliases(models)
+    }
+
     /// Refresh models if the provided ETag differs from the cached ETag.
     ///
     /// Uses `Online` strategy to fetch latest models when ETags differ.
@@ -342,7 +455,7 @@ impl ModelsManager {
         let _timer =
             codex_otel::start_global_timer("codex.remote_models.fetch_update.duration_ms", &[]);
         let auth = self.auth_manager.auth().await;
-        let auth_mode = self.auth_manager.auth_mode();
+        let auth_mode = auth.as_ref().map(CodexAuth::auth_mode);
         let api_provider = self.provider.to_api_provider(auth_mode)?;
         let api_auth = auth_provider_from_auth(
             &self.codex_home,
@@ -353,7 +466,13 @@ impl ModelsManager {
         )
         .await?;
         let transport = ReqwestTransport::new(build_reqwest_client());
-        let client = ModelsClient::new(transport, api_provider, api_auth);
+        let request_telemetry: Arc<dyn RequestTelemetry> = Arc::new(ModelsRequestTelemetry {
+            auth_mode: auth_mode.map(|mode| TelemetryAuthMode::from(mode).to_string()),
+            auth_header_attached: api_auth.auth_header_attached(),
+            auth_header_name: api_auth.auth_header_name(),
+        });
+        let client = ModelsClient::new(transport, api_provider, api_auth)
+            .with_telemetry(Some(request_telemetry));
 
         let client_version = crate::models_manager::client_version_to_whole();
         let (models, etag) = timeout(
@@ -379,7 +498,7 @@ impl ModelsManager {
     /// Replace the cached remote models and rebuild the derived presets list.
     async fn apply_remote_models(&self, models: Vec<ModelInfo>) {
         let mut existing_models = Self::load_remote_models_from_file().unwrap_or_default();
-        for model in models {
+        for model in Self::with_derived_aliases(models) {
             if let Some(existing_index) = existing_models
                 .iter()
                 .position(|existing| existing.slug == model.slug)
@@ -395,7 +514,7 @@ impl ModelsManager {
     fn load_remote_models_from_file() -> Result<Vec<ModelInfo>, std::io::Error> {
         let file_contents = include_str!("../../models.json");
         let response: ModelsResponse = serde_json::from_str(file_contents)?;
-        Ok(response.models)
+        Ok(Self::with_derived_aliases(response.models))
     }
 
     /// Attempt to satisfy the refresh from the cache when it matches the provider and TTL.
@@ -452,7 +571,7 @@ impl ModelsManager {
         Self::new_with_provider(
             codex_home,
             auth_manager,
-            None,
+            /*model_catalog*/ None,
             CollaborationModesConfig::default(),
             "test-provider".to_string(),
             provider,
@@ -481,12 +600,12 @@ impl ModelsManager {
         model: &str,
         config: &Config,
     ) -> ModelInfo {
-        let candidates: &[ModelInfo] = if let Some(model_catalog) = config.model_catalog.as_ref() {
-            &model_catalog.models
-        } else {
-            &[]
-        };
-        Self::construct_model_info_from_candidates(model, candidates, config)
+        let candidates = config
+            .model_catalog
+            .as_ref()
+            .map(|model_catalog| Self::with_derived_aliases(model_catalog.models.clone()))
+            .unwrap_or_else(|| Self::load_remote_models_from_file().unwrap_or_default());
+        Self::construct_model_info_from_candidates(model, &candidates, config)
     }
 }
 

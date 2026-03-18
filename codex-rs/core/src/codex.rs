@@ -204,6 +204,7 @@ use crate::feedback_tags;
 use crate::file_watcher::FileWatcher;
 use crate::file_watcher::FileWatcherEvent;
 use crate::git_info::get_git_repo_root;
+use crate::guardian::GuardianReviewSessionManager;
 use crate::instructions::UserInstructions;
 use crate::mcp::CODEX_APPS_MCP_SERVER_NAME;
 use crate::mcp::McpManager;
@@ -379,6 +380,7 @@ pub(crate) const INITIAL_SUBMIT_ID: &str = "";
 pub(crate) const SUBMISSION_CHANNEL_CAPACITY: usize = 512;
 const CYBER_VERIFY_URL: &str = "https://chatgpt.com/cyber";
 const CYBER_SAFETY_URL: &str = "https://developers.openai.com/codex/concepts/cyber-safety";
+const DIRECT_APP_TOOL_EXPOSURE_THRESHOLD: usize = 100;
 
 impl Codex {
     /// Spawn a new [`Codex`] and initialize the session.
@@ -474,7 +476,7 @@ impl Codex {
 
         let user_instructions = get_user_instructions(&config).await;
 
-        let exec_policy = if crate::guardian::is_guardian_subagent_source(&session_source) {
+        let exec_policy = if crate::guardian::is_guardian_reviewer_source(&session_source) {
             // Guardian review should rely on the built-in shell safety checks,
             // not on caller-provided exec-policy rules that could shape the
             // reviewer or silently auto-approve commands.
@@ -630,7 +632,7 @@ impl Codex {
 
     /// Submit the `op` wrapped in a `Submission` with a unique ID.
     pub async fn submit(&self, op: Op) -> CodexResult<String> {
-        self.submit_with_trace(op, None).await
+        self.submit_with_trace(op, /*trace*/ None).await
     }
 
     pub async fn submit_with_trace(
@@ -763,6 +765,7 @@ pub(crate) struct Session {
     pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
+    pub(crate) guardian_review_session: GuardianReviewSessionManager,
     pub(crate) services: SessionServices,
     js_repl: Arc<JsReplHandle>,
     next_internal_sub_id: AtomicU64,
@@ -868,9 +871,11 @@ impl TurnContext {
         };
         config.model_reasoning_effort = reasoning_effort;
 
-        let collaboration_mode =
-            self.collaboration_mode
-                .with_updates(Some(model.clone()), Some(reasoning_effort), None);
+        let collaboration_mode = self.collaboration_mode.with_updates(
+            Some(model.clone()),
+            Some(reasoning_effort),
+            /*developer_instructions*/ None,
+        );
         let features = self.features.clone();
         let tools_config = ToolsConfig::new(&ToolsConfigParams {
             model_info: &model_info,
@@ -1227,6 +1232,7 @@ impl Session {
         // todo(aibrahim): store this state somewhere else so we don't need to mut config
         let config = session_configuration.original_config_do_not_use.clone();
         let mut per_turn_config = (*config).clone();
+        per_turn_config.cwd = session_configuration.cwd.clone();
         per_turn_config.model_reasoning_effort =
             session_configuration.collaboration_mode.reasoning_effort();
         per_turn_config.model_reasoning_summary = session_configuration.model_reasoning_summary;
@@ -1615,7 +1621,7 @@ impl Session {
         config.features.emit_metrics(&session_telemetry);
         session_telemetry.counter(
             THREAD_STARTED_METRIC,
-            1,
+            /*inc*/ 1,
             &[(
                 "is_git",
                 if get_git_repo_root(&session_configuration.cwd).is_some() {
@@ -1747,7 +1753,8 @@ impl Session {
                 (None, None)
             };
 
-        let mut hook_shell_argv = default_shell.derive_exec_args("", false);
+        let mut hook_shell_argv =
+            default_shell.derive_exec_args("", /*use_login_shell*/ false);
         let hook_shell_program = hook_shell_argv.remove(0);
         let _ = hook_shell_argv.pop();
         let hooks = Hooks::new(HooksConfig {
@@ -1844,6 +1851,7 @@ impl Session {
             pending_mcp_server_refresh_config: Mutex::new(None),
             conversation: Arc::new(RealtimeConversationManager::new()),
             active_turn: Mutex::new(None),
+            guardian_review_session: GuardianReviewSessionManager::default(),
             services,
             js_repl,
             next_internal_sub_id: AtomicU64::new(0),
@@ -2102,7 +2110,8 @@ impl Session {
             InitialHistory::New => {
                 // Defer initial context insertion until the first real turn starts so
                 // turn/start overrides can be merged before we write model-visible context.
-                self.set_previous_turn_settings(None).await;
+                self.set_previous_turn_settings(/*previous_turn_settings*/ None)
+                    .await;
             }
             InitialHistory::Resumed(resumed_history) => {
                 let rollout_items = resumed_history.history;
@@ -2401,8 +2410,7 @@ impl Session {
         let skills_outcome = Arc::new(
             self.services
                 .skills_manager
-                .skills_for_cwd(&session_configuration.cwd, false)
-                .await,
+                .skills_for_config(&per_turn_config),
         );
         let mut turn_context: TurnContext = Self::make_turn_context(
             Some(Arc::clone(&self.services.auth_manager)),
@@ -2495,7 +2503,7 @@ impl Session {
             startup_turn_context.as_ref(),
             &[],
             &HashSet::new(),
-            None,
+            /*skills_outcome*/ None,
             &startup_cancellation_token,
         )
         .await?;
@@ -2581,8 +2589,13 @@ impl Session {
             let state = self.state.lock().await;
             state.session_configuration.clone()
         };
-        self.new_turn_from_configuration(sub_id, session_configuration, None, false)
-            .await
+        self.new_turn_from_configuration(
+            sub_id,
+            session_configuration,
+            /*final_output_json_schema*/ None,
+            /*sandbox_policy_changed*/ false,
+        )
+        .await
     }
 
     async fn build_settings_update_items(
@@ -3330,7 +3343,7 @@ impl Session {
     pub(crate) async fn record_model_warning(&self, message: impl Into<String>, ctx: &TurnContext) {
         self.services
             .session_telemetry
-            .counter("codex.model_warning", 1, &[]);
+            .counter("codex.model_warning", /*inc*/ 1, &[]);
         let item = ResponseItem::Message {
             id: None,
             role: "user".to_string(),
@@ -3491,7 +3504,7 @@ impl Session {
             .into_text(),
         );
         let separate_guardian_developer_message =
-            crate::guardian::is_guardian_subagent_source(&session_source);
+            crate::guardian::is_guardian_reviewer_source(&session_source);
         // Keep the guardian policy prompt out of the aggregated developer bundle so it
         // stays isolated as its own top-level developer message for guardian subagents.
         if !separate_guardian_developer_message
@@ -3987,12 +4000,13 @@ impl Session {
         server: &str,
         tool: &str,
         arguments: Option<serde_json::Value>,
+        meta: Option<serde_json::Value>,
     ) -> anyhow::Result<CallToolResult> {
         self.services
             .mcp_connection_manager
             .read()
             .await
-            .call_tool(server, tool, arguments)
+            .call_tool(server, tool, arguments, meta)
             .await
     }
 
@@ -4232,7 +4246,7 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                         state.session_configuration.collaboration_mode.with_updates(
                             model.clone(),
                             effort,
-                            None,
+                            /*developer_instructions*/ None,
                         )
                     };
                     handlers::override_turn_context(
@@ -4398,6 +4412,9 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
             break;
         }
     }
+    // Also drain cached guardian state if the submission loop exits because
+    // the channel closed without receiving an explicit shutdown op.
+    sess.guardian_review_session.shutdown().await;
     debug!("Agent loop exited");
 }
 
@@ -4581,7 +4598,9 @@ mod handlers {
         current_context.session_telemetry.user_prompt(&items);
 
         // Attempt to inject input into current task.
-        if let Err(SteerInputError::NoActiveTurn(items)) = sess.steer_input(items, None).await {
+        if let Err(SteerInputError::NoActiveTurn(items)) =
+            sess.steer_input(items, /*expected_turn_id*/ None).await
+        {
             sess.refresh_mcp_servers_if_requested(&current_context)
                 .await;
             let regular_task = sess.take_startup_regular_task().await.unwrap_or_default();
@@ -5209,6 +5228,7 @@ mod handlers {
             .unified_exec_manager
             .terminate_all_processes()
             .await;
+        sess.guardian_review_session.shutdown().await;
         info!("Shutting down Codex instance");
         let history = sess.clone_history().await;
         let turn_count = history
@@ -5325,7 +5345,7 @@ async fn spawn_review_thread(
         sess.services.shell_zsh_path.as_ref(),
         sess.services.main_execve_wrapper_exe.as_ref(),
     )
-    .with_web_search_config(None)
+    .with_web_search_config(/*web_search_config*/ None)
     .with_allow_login_shell(config.permissions.allow_login_shell)
     .with_agent_roles(config.agent_roles.clone());
 
@@ -6020,7 +6040,7 @@ pub(crate) async fn run_turn(
             }
             Err(e) => {
                 info!("Turn error: {e:#}");
-                let event = EventMsg::Error(e.to_error_event(None));
+                let event = EventMsg::Error(e.to_error_event(/*message_prefix*/ None));
                 sess.send_event(&turn_context, event).await;
                 // let the user continue the conversation
                 break;
@@ -6284,9 +6304,25 @@ fn build_prompt(
     turn_context: &TurnContext,
     base_instructions: BaseInstructions,
 ) -> Prompt {
+    let deferred_dynamic_tools = turn_context
+        .dynamic_tools
+        .iter()
+        .filter(|tool| tool.defer_loading)
+        .map(|tool| tool.name.as_str())
+        .collect::<HashSet<_>>();
+    let tools = if deferred_dynamic_tools.is_empty() {
+        router.model_visible_specs()
+    } else {
+        router
+            .model_visible_specs()
+            .into_iter()
+            .filter(|spec| !deferred_dynamic_tools.contains(spec.name()))
+            .collect()
+    };
+
     Prompt {
         input,
-        tools: router.model_visible_specs(),
+        tools,
         parallel_tool_calls: turn_context.model_info.supports_parallel_tool_calls,
         base_instructions,
         personality: turn_context.personality,
@@ -6511,8 +6547,6 @@ pub(crate) async fn built_tools(
         None
     };
 
-    // Keep the connector-grouped app view around for the router even though
-    // app tools only become prompt-visible after explicit selection/discovery.
     let app_tools = connectors.as_ref().map(|connectors| {
         filter_codex_apps_mcp_tools(&mcp_tools, connectors, &turn_context.config)
     });
@@ -6538,6 +6572,21 @@ pub(crate) async fn built_tools(
 
         mcp_tools = selected_mcp_tools;
     }
+
+    // Expose app tools directly when tool_search is disabled, or when tool_search
+    // is enabled but the accessible app tool set stays below the direct-exposure threshold.
+    let expose_app_tools_directly = !turn_context.tools_config.search_tool
+        || app_tools
+            .as_ref()
+            .is_some_and(|tools| tools.len() < DIRECT_APP_TOOL_EXPOSURE_THRESHOLD);
+    if expose_app_tools_directly && let Some(app_tools) = app_tools.as_ref() {
+        mcp_tools.extend(app_tools.clone());
+    }
+    let app_tools = if expose_app_tools_directly {
+        None
+    } else {
+        app_tools
+    };
 
     Ok(Arc::new(ToolRouter::from_config(
         &turn_context.tools_config,
@@ -7059,7 +7108,8 @@ async fn handle_assistant_item_done_in_plan_mode(
     {
         maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
 
-        if let Some(turn_item) = handle_non_tool_response_item(sess, turn_context, item, true).await
+        if let Some(turn_item) =
+            handle_non_tool_response_item(sess, turn_context, item, /*plan_mode*/ true).await
         {
             emit_turn_item_in_plan_mode(
                 sess,
@@ -7072,7 +7122,7 @@ async fn handle_assistant_item_done_in_plan_mode(
         }
 
         record_completed_response_item(sess, turn_context, item).await;
-        if let Some(agent_message) = last_assistant_message_from_item(item, true) {
+        if let Some(agent_message) = last_assistant_message_from_item(item, /*plan_mode*/ true) {
             *last_agent_message = Some(agent_message);
         }
         return true;
@@ -7443,7 +7493,7 @@ async fn try_run_sampling_request(
 
 pub(super) fn get_last_assistant_message_from_turn(responses: &[ResponseItem]) -> Option<String> {
     for item in responses.iter().rev() {
-        if let Some(message) = last_assistant_message_from_item(item, false) {
+        if let Some(message) = last_assistant_message_from_item(item, /*plan_mode*/ false) {
             return Some(message);
         }
     }

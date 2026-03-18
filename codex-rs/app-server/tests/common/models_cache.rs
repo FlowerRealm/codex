@@ -15,6 +15,7 @@ use std::path::Path;
 fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
     ModelInfo {
         slug: preset.id.clone(),
+        api_model_slug: None,
         display_name: preset.display_name.clone(),
         description: Some(preset.description.clone()),
         default_reasoning_level: Some(preset.default_reasoning_effort),
@@ -37,7 +38,7 @@ fn preset_to_info(preset: &ModelPreset, priority: i32) -> ModelInfo {
         availability_nux: None,
         apply_patch_tool_type: None,
         web_search_tool_type: Default::default(),
-        truncation_policy: TruncationPolicyConfig::bytes(10_000),
+        truncation_policy: TruncationPolicyConfig::bytes(/*limit*/ 10_000),
         supports_parallel_tool_calls: false,
         supports_image_detail_original: false,
         context_window: Some(272_000),

@@ -108,6 +108,7 @@ pub use provider_login_capabilities::ProviderLoginCapabilities;
 pub use provider_login_capabilities::provider_login_capabilities;
 pub use provider_login_capabilities::provider_oauth_url;
 mod event_mapping;
+mod response_debug_context;
 pub mod review_format;
 pub mod review_prompts;
 mod seatbelt_permissions;
