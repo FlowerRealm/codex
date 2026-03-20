@@ -66,6 +66,20 @@ fn plan_mode_instructions_disallow_preparatory_mutations_by_default() {
 }
 
 #[test]
+fn plan_mode_instructions_require_flow_logic_and_ascii_flowchart() {
+    let instructions = plan_preset(CollaborationModesConfig::default())
+        .developer_instructions
+        .expect("plan preset should include instructions")
+        .expect("plan instructions should be set");
+
+    assert!(instructions.contains("A `Data Structure or Interface Changes` section"));
+    assert!(instructions.contains("A `Flow Logic` section"));
+    assert!(instructions.contains("Exactly one ASCII flowchart"));
+    assert!(instructions.contains("Do not use Mermaid"));
+    assert!(instructions.contains("[Collect facts]"));
+}
+
+#[test]
 fn plan_mode_instructions_allow_preparatory_mutations_when_enabled() {
     let instructions = plan_preset(CollaborationModesConfig {
         default_mode_request_user_input: false,
