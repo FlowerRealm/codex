@@ -363,7 +363,8 @@ async fn update_plan_tool_rejects_unknown_active_plan_ids() -> anyhow::Result<()
     let plan_args = json!({
         "explanation": "Bad id",
         "plan": [
-            {"id": "missing-row", "step": "Inspect workspace", "status": "completed"},
+            {"id": "plan-1", "step": "Inspect workspace", "status": "completed"},
+            {"id": "missing-row", "step": "Report results", "status": "pending"},
         ],
     })
     .to_string();

@@ -193,6 +193,17 @@ async fn try_update_active_thread_plan(
         return Ok(false);
     };
 
+    if let Some(missing_row_id) = args
+        .plan
+        .iter()
+        .filter_map(|item| item.id.as_deref())
+        .find(|row_id| !active_plan.items.iter().any(|item| item.row_id == *row_id))
+    {
+        return Err(FunctionCallError::RespondToModel(format!(
+            "failed to update active thread plan row {missing_row_id}: active thread plan row not found: {missing_row_id}"
+        )));
+    }
+
     let mut updated = false;
     for item in &args.plan {
         let Some(row_id) = item.id.as_deref() else {
