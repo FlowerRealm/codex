@@ -260,10 +260,7 @@ impl ModelsManager {
             ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         self.provider_generation.fetch_add(1, Ordering::SeqCst);
         *self.etag.write().await = None;
-
-        let bundled = Self::load_bundled_models_from_file()
-            .unwrap_or_else(|err| panic!("failed to load bundled models.json: {err}"));
-        *self.remote_models.write().await = bundled;
+        self.try_load_cache().await;
     }
 
     /// List all available models, refreshing according to the specified strategy.

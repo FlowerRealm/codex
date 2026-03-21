@@ -907,6 +907,61 @@ async fn replace_provider_uses_provider_specific_cache_and_remote_models() {
 }
 
 #[tokio::test]
+async fn replace_provider_keeps_current_models_until_new_provider_models_arrive() {
+    let first_server = MockServer::start().await;
+    let first_slug = "provider-one-model";
+
+    let first_mock = mount_models_once(
+        &first_server,
+        ModelsResponse {
+            models: vec![remote_model(first_slug, "Provider One", 1)],
+        },
+    )
+    .await;
+
+    let codex_home = tempdir().expect("temp dir");
+    let auth_manager = AuthManager::from_auth_for_testing(CodexAuth::from_api_key("Test API Key"));
+    let manager = ModelsManager::new_with_provider(
+        codex_home.path().to_path_buf(),
+        auth_manager,
+        None,
+        CollaborationModesConfig::default(),
+        "provider-one".to_string(),
+        provider_for(first_server.uri()),
+        OAuthCredentialsStoreMode::default(),
+    );
+
+    manager
+        .refresh_available_models(RefreshStrategy::Online)
+        .await
+        .expect("first provider refresh should succeed");
+    let models_before_switch = manager
+        .try_list_models()
+        .expect("list models before switch");
+    assert!(
+        models_before_switch
+            .iter()
+            .any(|preset| preset.model == first_slug)
+    );
+
+    manager
+        .replace_provider(
+            "provider-two".to_string(),
+            provider_for("http://provider-two.invalid/v1".to_string()),
+        )
+        .await;
+
+    let models_after_switch = manager.try_list_models().expect("list models after switch");
+    assert!(
+        models_after_switch
+            .iter()
+            .any(|preset| preset.model == first_slug),
+        "switching providers should keep the current models until the new provider supplies replacements"
+    );
+    assert_eq!(first_mock.requests().len(), 1);
+}
+
+#[tokio::test]
 async fn stale_provider_refresh_result_is_dropped_after_provider_switch() {
     let first_server = MockServer::start().await;
     let second_server = MockServer::start().await;
