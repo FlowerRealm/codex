@@ -1789,6 +1789,9 @@ fn test_model_catalog(config: &Config) -> Arc<ModelCatalog> {
         default_mode_request_user_input: config
             .features
             .enabled(Feature::DefaultModeRequestUserInput),
+        plan_mode_preparatory_mutations: config
+            .features
+            .enabled(Feature::PlanModePreparatoryMutations),
     };
     Arc::new(ModelCatalog::new(
         codex_core::test_support::all_model_presets().clone(),
@@ -3095,8 +3098,15 @@ async fn plan_implementation_popup_skips_without_proposed_plan() {
     chat.on_plan_update(UpdatePlanArgs {
         explanation: None,
         plan: vec![PlanItemArg {
+            id: None,
             step: "First".to_string(),
             status: StepStatus::Pending,
+            path: None,
+            details: None,
+            inputs: None,
+            outputs: None,
+            depends_on: None,
+            acceptance: None,
         }],
     });
     chat.on_task_complete(None, false);
@@ -3227,8 +3237,15 @@ async fn plan_implementation_popup_skips_when_rate_limit_prompt_pending() {
     chat.on_plan_update(UpdatePlanArgs {
         explanation: None,
         plan: vec![PlanItemArg {
+            id: None,
             step: "First".to_string(),
             status: StepStatus::Pending,
+            path: None,
+            details: None,
+            inputs: None,
+            outputs: None,
+            depends_on: None,
+            acceptance: None,
         }],
     });
     chat.on_rate_limit_snapshot(Some(snapshot(92.0)));
@@ -10115,16 +10132,37 @@ async fn plan_update_renders_history_cell() {
         explanation: Some("Adapting plan".to_string()),
         plan: vec![
             PlanItemArg {
+                id: None,
                 step: "Explore codebase".into(),
                 status: StepStatus::Completed,
+                path: None,
+                details: None,
+                inputs: None,
+                outputs: None,
+                depends_on: None,
+                acceptance: None,
             },
             PlanItemArg {
+                id: None,
                 step: "Implement feature".into(),
                 status: StepStatus::InProgress,
+                path: None,
+                details: None,
+                inputs: None,
+                outputs: None,
+                depends_on: None,
+                acceptance: None,
             },
             PlanItemArg {
+                id: None,
                 step: "Write tests".into(),
                 status: StepStatus::Pending,
+                path: None,
+                details: None,
+                inputs: None,
+                outputs: None,
+                depends_on: None,
+                acceptance: None,
             },
         ],
     };

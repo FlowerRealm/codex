@@ -17,6 +17,10 @@ fn request_user_input_unavailable_messages_respect_default_mode_feature_flag() {
         None
     );
     assert_eq!(
+        request_user_input_unavailable_message(ModeKind::AutoPlan, false),
+        Some("request_user_input is unavailable in Auto Plan mode".to_string())
+    );
+    assert_eq!(
         request_user_input_unavailable_message(ModeKind::Default, false),
         Some("request_user_input is unavailable in Default mode".to_string())
     );

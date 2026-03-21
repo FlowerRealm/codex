@@ -9,6 +9,8 @@ use codex_protocol::models::ContentItem;
 use codex_protocol::models::DeveloperInstructions;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::ModelInfo;
+use codex_protocol::protocol::COLLABORATION_MODE_CLOSE_TAG;
+use codex_protocol::protocol::COLLABORATION_MODE_OPEN_TAG;
 use codex_protocol::protocol::TurnContextItem;
 
 fn build_environment_update_item(
@@ -57,11 +59,21 @@ fn build_collaboration_mode_update_item(
 ) -> Option<DeveloperInstructions> {
     let prev = previous?;
     if prev.collaboration_mode.as_ref() != Some(&next.collaboration_mode) {
-        // If the next mode has empty developer instructions, this returns None and we emit no
-        // update, so prior collaboration instructions remain in the prompt history.
-        Some(DeveloperInstructions::from_collaboration_mode(
-            &next.collaboration_mode,
-        )?)
+        DeveloperInstructions::from_collaboration_mode(&next.collaboration_mode).or_else(|| {
+            let previous_has_instructions = prev
+                .collaboration_mode
+                .as_ref()
+                .and_then(|mode| mode.settings.developer_instructions.as_deref())
+                .is_some_and(|instructions| !instructions.is_empty());
+
+            // Emit an empty collaboration-mode marker when instructions are cleared so prompt
+            // normalization can drop stale older mode sections without exposing a no-op tag.
+            previous_has_instructions.then(|| {
+                DeveloperInstructions::new(format!(
+                    "{COLLABORATION_MODE_OPEN_TAG}{COLLABORATION_MODE_CLOSE_TAG}"
+                ))
+            })
+        })
     } else {
         None
     }

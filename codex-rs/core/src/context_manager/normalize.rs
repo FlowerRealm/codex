@@ -3,6 +3,8 @@ use codex_protocol::models::FunctionCallOutputContentItem;
 use codex_protocol::models::FunctionCallOutputPayload;
 use codex_protocol::models::ResponseItem;
 use codex_protocol::openai_models::InputModality;
+use codex_protocol::protocol::COLLABORATION_MODE_CLOSE_TAG;
+use codex_protocol::protocol::COLLABORATION_MODE_OPEN_TAG;
 use std::collections::HashSet;
 
 use crate::util::error_or_panic;
@@ -10,6 +12,34 @@ use tracing::info;
 
 const IMAGE_CONTENT_OMITTED_PLACEHOLDER: &str =
     "image content omitted because you do not support image input";
+
+pub(crate) fn retain_latest_collaboration_mode_message(items: &mut Vec<ResponseItem>) {
+    let last_mode_item_index = items
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, item)| message_collaboration_mode_positions(item).map(|_| idx))
+        .next_back();
+
+    let Some(last_mode_item_index) = last_mode_item_index else {
+        return;
+    };
+
+    let mut normalized_items = Vec::with_capacity(items.len());
+    for (idx, item) in items.drain(..).enumerate() {
+        if let Some(mode_positions) = message_collaboration_mode_positions(&item) {
+            let keep_collaboration_mode = idx == last_mode_item_index;
+            if let Some(normalized) =
+                strip_collaboration_mode_sections(item, &mode_positions, keep_collaboration_mode)
+            {
+                normalized_items.push(normalized);
+            }
+        } else {
+            normalized_items.push(item);
+        }
+    }
+
+    *items = normalized_items;
+}
 
 pub(crate) fn ensure_call_outputs_present(items: &mut Vec<ResponseItem>) {
     // Collect synthetic outputs to insert immediately after their calls.
@@ -287,6 +317,102 @@ where
     if let Some(pos) = items.iter().position(predicate) {
         items.remove(pos);
     }
+}
+
+fn message_collaboration_mode_positions(item: &ResponseItem) -> Option<Vec<usize>> {
+    let ResponseItem::Message { role, content, .. } = item else {
+        return None;
+    };
+    if role != "developer" {
+        return None;
+    }
+
+    let positions: Vec<usize> = content
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, content_item)| {
+            let ContentItem::InputText { text } = content_item else {
+                return None;
+            };
+            is_collaboration_mode_section(text).then_some(idx)
+        })
+        .collect();
+
+    (!positions.is_empty()).then_some(positions)
+}
+
+fn strip_collaboration_mode_sections(
+    item: ResponseItem,
+    collaboration_mode_positions: &[usize],
+    keep_collaboration_mode: bool,
+) -> Option<ResponseItem> {
+    let ResponseItem::Message {
+        id,
+        role,
+        content,
+        end_turn,
+        phase,
+    } = item
+    else {
+        return Some(item);
+    };
+
+    let normalized_content: Vec<ContentItem> = content
+        .into_iter()
+        .enumerate()
+        .filter_map(|(idx, content_item)| {
+            let is_collaboration_mode = collaboration_mode_positions.binary_search(&idx).is_ok();
+            let keep_content_item = if is_collaboration_mode {
+                keep_collaboration_mode
+                    && !matches!(
+                        &content_item,
+                        ContentItem::InputText { text }
+                            if is_empty_collaboration_mode_section(text)
+                    )
+            } else {
+                true
+            };
+            if keep_content_item {
+                Some(content_item)
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    if normalized_content.is_empty() {
+        None
+    } else {
+        Some(ResponseItem::Message {
+            id,
+            role,
+            content: normalized_content,
+            end_turn,
+            phase,
+        })
+    }
+}
+
+fn is_collaboration_mode_section(text: &str) -> bool {
+    let trimmed = text.trim();
+    trimmed.starts_with(COLLABORATION_MODE_OPEN_TAG)
+        && trimmed.ends_with(COLLABORATION_MODE_CLOSE_TAG)
+}
+
+fn is_empty_collaboration_mode_section(text: &str) -> bool {
+    let trimmed = text.trim();
+    if !is_collaboration_mode_section(trimmed) {
+        return false;
+    }
+
+    let Some(without_open_tag) = trimmed.strip_prefix(COLLABORATION_MODE_OPEN_TAG) else {
+        return false;
+    };
+    let Some(inner) = without_open_tag.strip_suffix(COLLABORATION_MODE_CLOSE_TAG) else {
+        return false;
+    };
+
+    inner.trim().is_empty()
 }
 
 /// Strip image content from messages and tool outputs when the model does not support images.

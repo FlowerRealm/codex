@@ -89,6 +89,7 @@ pub(crate) struct FooterProps {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CollaborationModeIndicator {
     Plan,
+    #[allow(dead_code)] // Hidden by current mode filtering; used for legacy auto-plan sessions.
     AutoPlan,
     #[allow(dead_code)] // Hidden by current mode filtering; kept for future UI re-enablement.
     PairProgramming,

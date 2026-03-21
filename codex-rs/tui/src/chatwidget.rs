@@ -68,8 +68,6 @@ use codex_core::config::types::ApprovalsReviewer;
 use codex_core::config::types::Notifications;
 use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::ConfigLayerStackOrdering;
-use codex_core::default_client::build_reqwest_client;
-use codex_core::features::FEATURES;
 use codex_core::features::Feature;
 use codex_core::find_thread_name_by_id;
 use codex_core::git_info::current_branch_name;
@@ -1851,21 +1849,22 @@ impl ChatWidget {
 
         match self.active_mode_kind() {
             ModeKind::Plan => self.open_plan_implementation_prompt(),
-            ModeKind::AutoPlan => {
-                let Some(mask) =
-                    collaboration_modes::default_mode_mask(self.models_manager.as_ref())
-                else {
-                    self.add_error_message("Default mode unavailable".to_string());
-                    return;
-                };
-                let user_text = PLAN_IMPLEMENTATION_CODING_MESSAGE.to_string();
-                self.app_event_tx.send(AppEvent::SubmitUserMessageWithMode {
-                    text: user_text,
-                    collaboration_mode: mask,
-                });
-            }
+            ModeKind::AutoPlan => self.submit_plan_implementation_with_default_mode(),
             ModeKind::Default | ModeKind::PairProgramming | ModeKind::Execute => {}
         }
+    }
+
+    fn submit_plan_implementation_with_default_mode(&mut self) {
+        let Some(mask) = collaboration_modes::default_mode_mask(self.models_manager.as_ref())
+        else {
+            self.add_error_message("Default mode unavailable".to_string());
+            return;
+        };
+        let user_text = PLAN_IMPLEMENTATION_CODING_MESSAGE.to_string();
+        self.app_event_tx.send(AppEvent::SubmitUserMessageWithMode {
+            text: user_text,
+            collaboration_mode: mask,
+        });
     }
 
     fn open_plan_implementation_prompt(&mut self) {

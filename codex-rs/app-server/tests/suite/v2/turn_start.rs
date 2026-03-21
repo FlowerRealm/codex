@@ -677,6 +677,128 @@ async fn turn_start_uses_thread_feature_overrides_for_collaboration_mode_instruc
 }
 
 #[tokio::test]
+async fn turn_start_switch_from_plan_to_default_drops_stale_plan_instructions_v2() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = responses::start_mock_server().await;
+    let response_mock = responses::mount_sse_sequence(
+        &server,
+        vec![
+            responses::sse(vec![
+                responses::ev_response_created("resp-1"),
+                responses::ev_assistant_message("msg-1", "Done"),
+                responses::ev_completed("resp-1"),
+            ]),
+            responses::sse(vec![
+                responses::ev_response_created("resp-2"),
+                responses::ev_assistant_message("msg-2", "Done"),
+                responses::ev_completed("resp-2"),
+            ]),
+        ],
+    )
+    .await;
+
+    let codex_home = TempDir::new()?;
+    create_config_toml(
+        codex_home.path(),
+        &server.uri(),
+        "never",
+        &BTreeMap::from([(Feature::DefaultModeRequestUserInput, true)]),
+    )?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let thread_req = mcp
+        .send_thread_start_request(ThreadStartParams {
+            model: Some("gpt-5.2-codex".to_string()),
+            ..Default::default()
+        })
+        .await?;
+    let thread_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(thread_req)),
+    )
+    .await??;
+    let ThreadStartResponse { thread, .. } = to_response::<ThreadStartResponse>(thread_resp)?;
+
+    let plan_mode = CollaborationMode {
+        mode: ModeKind::Plan,
+        settings: Settings {
+            model: "mock-model-plan".to_string(),
+            reasoning_effort: Some(ReasoningEffort::Medium),
+            developer_instructions: None,
+        },
+    };
+    let default_mode = CollaborationMode {
+        mode: ModeKind::Default,
+        settings: Settings {
+            model: "mock-model-default".to_string(),
+            reasoning_effort: Some(ReasoningEffort::High),
+            developer_instructions: None,
+        },
+    };
+
+    let first_turn_req = mcp
+        .send_turn_start_request(TurnStartParams {
+            thread_id: thread.id.clone(),
+            input: vec![V2UserInput::Text {
+                text: "Plan first".to_string(),
+                text_elements: Vec::new(),
+            }],
+            collaboration_mode: Some(plan_mode),
+            ..Default::default()
+        })
+        .await?;
+    let _first_turn_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(first_turn_req)),
+    )
+    .await??;
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    let second_turn_req = mcp
+        .send_turn_start_request(TurnStartParams {
+            thread_id: thread.id.clone(),
+            input: vec![V2UserInput::Text {
+                text: "Back to default".to_string(),
+                text_elements: Vec::new(),
+            }],
+            collaboration_mode: Some(default_mode),
+            ..Default::default()
+        })
+        .await?;
+    let _second_turn_resp: JSONRPCResponse = timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(second_turn_req)),
+    )
+    .await??;
+    timeout(
+        DEFAULT_READ_TIMEOUT,
+        mcp.read_stream_until_notification_message("turn/completed"),
+    )
+    .await??;
+
+    let requests = response_mock.requests();
+    assert_eq!(requests.len(), 2);
+    let second_request = &requests[1];
+    let payload_text = second_request.body_json().to_string();
+    assert!(payload_text.contains("You are now in Default mode."));
+    assert!(!payload_text.contains("# Plan Mode (Conversational)"));
+    assert!(
+        !payload_text
+            .contains("You are in **Plan Mode** until a developer message explicitly ends it.")
+    );
+    assert!(payload_text.contains("The `request_user_input` tool is available in Default mode."));
+
+    Ok(())
+}
+
+#[tokio::test]
 async fn turn_start_accepts_personality_override_v2() -> Result<()> {
     skip_if_no_network!(Ok(()));
 

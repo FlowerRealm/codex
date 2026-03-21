@@ -346,6 +346,9 @@ impl ContextManager {
         // all outputs must have a corresponding function/tool call
         normalize::remove_orphan_outputs(&mut self.items);
 
+        // collaboration mode is a single active state, not append-only history
+        normalize::retain_latest_collaboration_mode_message(&mut self.items);
+
         // strip images when model does not support them
         normalize::strip_images_when_unsupported(input_modalities, &mut self.items);
     }

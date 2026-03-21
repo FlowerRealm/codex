@@ -17,6 +17,8 @@ use codex_protocol::models::ReasoningItemContent;
 use codex_protocol::models::ReasoningItemReasoningSummary;
 use codex_protocol::openai_models::InputModality;
 use codex_protocol::openai_models::default_input_modalities;
+use codex_protocol::protocol::COLLABORATION_MODE_CLOSE_TAG;
+use codex_protocol::protocol::COLLABORATION_MODE_OPEN_TAG;
 use image::ImageBuffer;
 use image::ImageFormat;
 use image::Rgba;
@@ -109,6 +111,25 @@ fn approx_token_count_for_text(text: &str) -> i64 {
     i64::try_from(text.len().saturating_add(3) / 4).unwrap_or(i64::MAX)
 }
 
+fn developer_input_text_msg(sections: Vec<&str>) -> ResponseItem {
+    ResponseItem::Message {
+        id: None,
+        role: "developer".to_string(),
+        content: sections
+            .into_iter()
+            .map(|text| ContentItem::InputText {
+                text: text.to_string(),
+            })
+            .collect(),
+        end_turn: None,
+        phase: None,
+    }
+}
+
+fn collaboration_mode_text(text: &str) -> String {
+    format!("{COLLABORATION_MODE_OPEN_TAG}{text}{COLLABORATION_MODE_CLOSE_TAG}")
+}
+
 #[test]
 fn filters_non_api_messages() {
     let mut h = ContextManager::default();
@@ -164,6 +185,72 @@ fn filters_non_api_messages() {
                 phase: None,
             }
         ]
+    );
+}
+
+#[test]
+fn for_prompt_keeps_only_latest_collaboration_mode_section() {
+    let first_mode = collaboration_mode_text("plan instructions");
+    let second_mode = collaboration_mode_text("default instructions");
+    let history = create_history_with_items(vec![
+        developer_input_text_msg(vec![&first_mode]),
+        user_input_text_msg("hello"),
+        developer_input_text_msg(vec![&second_mode]),
+    ]);
+
+    assert_eq!(
+        history.for_prompt(&default_input_modalities()),
+        vec![
+            user_input_text_msg("hello"),
+            developer_input_text_msg(vec![&second_mode]),
+        ]
+    );
+}
+
+#[test]
+fn for_prompt_strips_stale_collaboration_mode_section_but_keeps_other_developer_sections() {
+    let stale_mode = collaboration_mode_text("plan instructions");
+    let current_mode = collaboration_mode_text("default instructions");
+    let history = create_history_with_items(vec![
+        developer_input_text_msg(vec![
+            "<permissions instructions>keep</permissions instructions>",
+            &stale_mode,
+        ]),
+        user_input_text_msg("hello"),
+        developer_input_text_msg(vec![
+            "<model_switch>keep this too</model_switch>",
+            &current_mode,
+        ]),
+    ]);
+
+    assert_eq!(
+        history.for_prompt(&default_input_modalities()),
+        vec![
+            developer_input_text_msg(vec![
+                "<permissions instructions>keep</permissions instructions>"
+            ]),
+            user_input_text_msg("hello"),
+            developer_input_text_msg(vec![
+                "<model_switch>keep this too</model_switch>",
+                &current_mode
+            ]),
+        ]
+    );
+}
+
+#[test]
+fn for_prompt_drops_empty_latest_collaboration_mode_section_and_stale_older_mode() {
+    let stale_mode = collaboration_mode_text("plan instructions");
+    let cleared_mode = collaboration_mode_text("");
+    let history = create_history_with_items(vec![
+        developer_input_text_msg(vec![&stale_mode]),
+        user_input_text_msg("hello"),
+        developer_input_text_msg(vec![&cleared_mode]),
+    ]);
+
+    assert_eq!(
+        history.for_prompt(&default_input_modalities()),
+        vec![user_input_text_msg("hello")]
     );
 }
 

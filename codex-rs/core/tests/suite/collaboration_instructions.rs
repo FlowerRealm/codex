@@ -64,6 +64,10 @@ fn count_messages_containing(texts: &[String], target: &str) -> usize {
     texts.iter().filter(|text| text.contains(target)).count()
 }
 
+fn count_collaboration_mode_messages(texts: &[String]) -> usize {
+    count_messages_containing(texts, COLLABORATION_MODE_OPEN_TAG)
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn no_collaboration_instructions_by_default() -> Result<()> {
     skip_if_no_network!(Ok(()));
@@ -397,8 +401,9 @@ async fn collaboration_mode_update_emits_new_instruction_message() -> Result<()>
     let dev_texts = developer_texts(&input);
     let first_text = collab_xml(first_text);
     let second_text = collab_xml(second_text);
-    assert_eq!(count_messages_containing(&dev_texts, &first_text), 1);
+    assert_eq!(count_messages_containing(&dev_texts, &first_text), 0);
     assert_eq!(count_messages_containing(&dev_texts, &second_text), 1);
+    assert_eq!(count_collaboration_mode_messages(&dev_texts), 1);
 
     Ok(())
 }
@@ -568,8 +573,100 @@ async fn collaboration_mode_update_emits_new_instruction_message_when_mode_chang
     let dev_texts = developer_texts(&input);
     let default_text = collab_xml(default_text);
     let plan_text = collab_xml(plan_text);
-    assert_eq!(count_messages_containing(&dev_texts, &default_text), 1);
+    assert_eq!(count_messages_containing(&dev_texts, &default_text), 0);
     assert_eq!(count_messages_containing(&dev_texts, &plan_text), 1);
+    assert_eq!(count_collaboration_mode_messages(&dev_texts), 1);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn collaboration_mode_switch_from_plan_to_default_only_keeps_default_prompt() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _req1 = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let req2 = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
+    )
+    .await;
+
+    let test = test_codex().build(&server).await?;
+    let plan_text = "plan mode instructions";
+    let default_text = "default mode instructions";
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: Some(collab_mode_with_mode_and_instructions(
+                ModeKind::Plan,
+                Some(plan_text),
+            )),
+            personality: None,
+        })
+        .await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "hello 1".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: Some(collab_mode_with_mode_and_instructions(
+                ModeKind::Default,
+                Some(default_text),
+            )),
+            personality: None,
+        })
+        .await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "hello 2".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let input = req2.single_request().input();
+    let dev_texts = developer_texts(&input);
+    let plan_text = collab_xml(plan_text);
+    let default_text = collab_xml(default_text);
+    assert_eq!(count_messages_containing(&dev_texts, &plan_text), 0);
+    assert_eq!(count_messages_containing(&dev_texts, &default_text), 1);
+    assert_eq!(count_collaboration_mode_messages(&dev_texts), 1);
 
     Ok(())
 }
@@ -790,6 +887,99 @@ async fn empty_collaboration_instructions_are_ignored() -> Result<()> {
     let dev_texts = developer_texts(&input);
     let collab_text = collab_xml("");
     assert_eq!(count_messages_containing(&dev_texts, &collab_text), 0);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn clearing_collaboration_instructions_removes_stale_prompt() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let _req1 = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-1"), ev_completed("resp-1")]),
+    )
+    .await;
+    let req2 = mount_sse_once(
+        &server,
+        sse(vec![ev_response_created("resp-2"), ev_completed("resp-2")]),
+    )
+    .await;
+
+    let test = test_codex().build(&server).await?;
+    let collab_text = "plan mode instructions";
+    let current_model = test.session_configured.model.clone();
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: Some(collab_mode_with_mode_and_instructions(
+                ModeKind::Plan,
+                Some(collab_text),
+            )),
+            personality: None,
+        })
+        .await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "hello 1".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    test.codex
+        .submit(Op::OverrideTurnContext {
+            cwd: None,
+            approval_policy: None,
+            approvals_reviewer: None,
+            sandbox_policy: None,
+            windows_sandbox_level: None,
+            model: None,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: Some(CollaborationMode {
+                mode: ModeKind::Default,
+                settings: Settings {
+                    model: current_model,
+                    reasoning_effort: None,
+                    developer_instructions: Some("".to_string()),
+                },
+            }),
+            personality: None,
+        })
+        .await?;
+
+    test.codex
+        .submit(Op::UserInput {
+            items: vec![UserInput::Text {
+                text: "hello 2".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+        })
+        .await?;
+    wait_for_event(&test.codex, |ev| matches!(ev, EventMsg::TurnComplete(_))).await;
+
+    let input = req2.single_request().input();
+    let dev_texts = developer_texts(&input);
+    let collab_text = collab_xml(collab_text);
+    assert_eq!(count_messages_containing(&dev_texts, &collab_text), 0);
+    assert_eq!(count_collaboration_mode_messages(&dev_texts), 0);
 
     Ok(())
 }
