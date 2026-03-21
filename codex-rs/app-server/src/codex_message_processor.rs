@@ -2856,7 +2856,10 @@ impl CodexMessageProcessor {
         };
 
         let mut thread = summary_to_thread(summary);
-        self.attach_thread_name(thread_uuid, &mut thread).await;
+        if let Err(message) = self.attach_thread_name(thread_uuid, &mut thread).await {
+            self.send_internal_error(request_id, message).await;
+            return;
+        }
         thread.status = resolve_thread_status(
             self.thread_watch_manager
                 .loaded_status_for_thread(&thread.id)
@@ -3175,7 +3178,10 @@ impl CodexMessageProcessor {
                         .await,
                     /*has_in_progress_turn*/ false,
                 );
-                self.attach_thread_name(thread_id, &mut thread).await;
+                if let Err(message) = self.attach_thread_name(thread_id, &mut thread).await {
+                    self.send_internal_error(request_id, message).await;
+                    return;
+                }
                 let thread_id = thread.id.clone();
                 let response = ThreadUnarchiveResponse { thread };
                 self.outgoing.send_response(request_id, response).await;
@@ -3558,7 +3564,10 @@ impl CodexMessageProcessor {
             }
             build_thread_from_snapshot(thread_uuid, &config_snapshot, loaded_rollout_path)
         };
-        self.attach_thread_name(thread_uuid, &mut thread).await;
+        if let Err(message) = self.attach_thread_name(thread_uuid, &mut thread).await {
+            self.send_internal_error(request_id, message).await;
+            return;
+        }
 
         if include_turns && let Some(rollout_path) = rollout_path.as_ref() {
             match read_rollout_items_from_rollout(rollout_path).await {
@@ -4149,11 +4158,18 @@ impl CodexMessageProcessor {
             self.send_internal_error(request_id, message).await;
             return None;
         }
-        self.attach_thread_name(thread_id, &mut thread).await;
+        if let Err(message) = self.attach_thread_name(thread_id, &mut thread).await {
+            self.send_internal_error(request_id, message).await;
+            return None;
+        }
         Some(thread)
     }
 
-    async fn attach_thread_name(&self, thread_id: ThreadId, thread: &mut Thread) {
+    async fn attach_thread_name(
+        &self,
+        thread_id: ThreadId,
+        thread: &mut Thread,
+    ) -> Result<(), String> {
         match find_thread_name_by_id(&self.config.codex_home, &thread_id).await {
             Ok(name) => {
                 thread.name = name;
@@ -4162,24 +4178,34 @@ impl CodexMessageProcessor {
                 warn!("Failed to read thread name for {thread_id}: {err}");
             }
         }
-        thread.active_plan = self.active_plan_for_thread(thread_id).await;
+        thread.active_plan = self.active_plan_for_thread(thread_id).await?;
+        Ok(())
     }
 
-    async fn active_plan_for_thread(&self, thread_id: ThreadId) -> Option<ThreadActivePlan> {
+    async fn active_plan_for_thread(
+        &self,
+        thread_id: ThreadId,
+    ) -> Result<Option<ThreadActivePlan>, String> {
         let runtime = if let Ok(thread) = self.thread_manager.get_thread(thread_id).await {
             if let Some(state_db) = thread.state_db() {
-                state_db
+                Some(state_db)
             } else {
-                self.state_db_ctx_for_thread().await?
+                self.state_db_ctx_for_thread().await
             }
         } else {
-            self.state_db_ctx_for_thread().await?
+            self.state_db_ctx_for_thread().await
+        };
+        let Some(runtime) = runtime else {
+            return Ok(None);
         };
         let active_plan = runtime
             .get_active_thread_plan(thread_id.to_string().as_str())
             .await
-            .ok()??;
-        Some(ThreadActivePlan {
+            .map_err(|err| format!("failed to load active plan for thread {thread_id}: {err}"))?;
+        let Some(active_plan) = active_plan else {
+            return Ok(None);
+        };
+        Ok(Some(ThreadActivePlan {
             snapshot_id: active_plan.snapshot.id,
             source_turn_id: active_plan.snapshot.source_turn_id,
             source_item_id: active_plan.snapshot.source_item_id,
@@ -4209,7 +4235,7 @@ impl CodexMessageProcessor {
                     acceptance: item.acceptance,
                 })
                 .collect(),
-        })
+        }))
     }
 
     async fn state_db_ctx_for_thread(&self) -> Option<StateDbHandle> {
