@@ -260,6 +260,7 @@ impl ModelsManager {
             ModelsCacheManager::new(cache_path, DEFAULT_MODEL_CACHE_TTL);
         self.provider_generation.fetch_add(1, Ordering::SeqCst);
         *self.etag.write().await = None;
+        self.remote_models.write().await.clear();
         self.try_load_cache().await;
     }
 

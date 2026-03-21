@@ -907,7 +907,7 @@ async fn replace_provider_uses_provider_specific_cache_and_remote_models() {
 }
 
 #[tokio::test]
-async fn replace_provider_keeps_current_models_until_new_provider_models_arrive() {
+async fn replace_provider_clears_stale_models_when_new_provider_has_no_cache() {
     let first_server = MockServer::start().await;
     let first_slug = "provider-one-model";
 
@@ -953,10 +953,8 @@ async fn replace_provider_keeps_current_models_until_new_provider_models_arrive(
 
     let models_after_switch = manager.try_list_models().expect("list models after switch");
     assert!(
-        models_after_switch
-            .iter()
-            .any(|preset| preset.model == first_slug),
-        "switching providers should keep the current models until the new provider supplies replacements"
+        models_after_switch.is_empty(),
+        "switching providers without a cache must not keep exposing the previous provider models"
     );
     assert_eq!(first_mock.requests().len(), 1);
 }
