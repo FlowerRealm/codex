@@ -245,7 +245,7 @@ async fn try_update_active_thread_plan(
             .iter()
             .find(|candidate| candidate.id.as_deref() == Some(row_id))
         {
-            item.status = refreshed_item.status.clone();
+            *item = refreshed_item.clone();
         }
     }
     Ok(true)

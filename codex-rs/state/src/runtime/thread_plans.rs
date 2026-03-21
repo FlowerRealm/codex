@@ -170,7 +170,7 @@ ORDER BY row_index ASC
         };
         let now = Utc::now().timestamp();
         let completed_at = matches!(status, ThreadPlanItemStatus::Completed).then_some(now);
-        sqlx::query(
+        let result = sqlx::query(
             r#"
 UPDATE thread_plan_items
 SET
@@ -187,6 +187,11 @@ WHERE snapshot_id = ? AND row_id = ?
         .bind(row_id)
         .execute(self.pool.as_ref())
         .await?;
+        if result.rows_affected() == 0 {
+            return Err(anyhow::anyhow!(
+                "active thread plan row not found: {row_id}"
+            ));
+        }
         self.get_active_thread_plan(thread_id).await
     }
 }
@@ -272,6 +277,16 @@ mod tests {
             .expect("updated plan should exist");
         assert_eq!(updated.items[1].status, ThreadPlanItemStatus::Completed);
         assert!(updated.items[1].completed_at.is_some());
+
+        let err = runtime
+            .update_active_thread_plan_item_status(
+                thread_id,
+                "missing-row",
+                ThreadPlanItemStatus::Completed,
+            )
+            .await
+            .expect_err("missing rows should fail");
+        assert!(err.to_string().contains("active thread plan row not found"));
 
         let _ = tokio::fs::remove_dir_all(codex_home).await;
     }

@@ -288,6 +288,11 @@ async fn update_plan_tool_keeps_non_id_rows_when_active_plan_exists() -> anyhow:
             assert_eq!(update.plan[0].id.as_deref(), Some("plan-1"));
             assert_eq!(update.plan[0].step, "Inspect workspace");
             assert_matches!(update.plan[0].status, StepStatus::Completed);
+            assert_eq!(
+                update.plan[0].path.as_deref(),
+                Some("codex-rs/core/src/tools/handlers/plan.rs")
+            );
+            assert_eq!(update.plan[0].details.as_deref(), Some("sync state"));
             assert_eq!(update.plan[1].id, None);
             assert_eq!(update.plan[1].step, "Report results");
             assert_matches!(update.plan[1].status, StepStatus::Pending);
@@ -311,6 +316,103 @@ async fn update_plan_tool_keeps_non_id_rows_when_active_plan_exists() -> anyhow:
     assert_eq!(active_plan.items.len(), 1);
     assert_eq!(active_plan.items[0].row_id, "plan-1");
     assert_eq!(active_plan.items[0].status, ThreadPlanItemStatus::Completed);
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn update_plan_tool_rejects_unknown_active_plan_ids() -> anyhow::Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let server = start_mock_server().await;
+    let home = Arc::new(TempDir::new()?);
+
+    let mut builder = test_codex().with_home(home);
+    let TestCodex {
+        codex,
+        cwd,
+        session_configured,
+        ..
+    } = builder.build(&server).await?;
+
+    let db = codex.state_db().expect("state db");
+    db.replace_active_thread_plan(
+        &ThreadPlanSnapshotCreateParams {
+            id: "snapshot-1".to_string(),
+            thread_id: session_configured.session_id.to_string(),
+            source_turn_id: "turn-1".to_string(),
+            source_item_id: "item-1".to_string(),
+            raw_markdown: "plan".to_string(),
+        },
+        &[ThreadPlanItemCreateParams {
+            row_id: "plan-1".to_string(),
+            row_index: 0,
+            status: ThreadPlanItemStatus::Pending,
+            step: "Inspect workspace".to_string(),
+            path: "codex-rs/core/src/tools/handlers/plan.rs".to_string(),
+            details: "sync state".to_string(),
+            inputs: Vec::new(),
+            outputs: Vec::new(),
+            depends_on: Vec::new(),
+            acceptance: None,
+        }],
+    )
+    .await?;
+
+    let call_id = "plan-tool-unknown-id";
+    let plan_args = json!({
+        "explanation": "Bad id",
+        "plan": [
+            {"id": "missing-row", "step": "Inspect workspace", "status": "completed"},
+        ],
+    })
+    .to_string();
+
+    let first_response = sse(vec![
+        ev_response_created("resp-1"),
+        ev_function_call(call_id, "update_plan", &plan_args),
+        ev_completed("resp-1"),
+    ]);
+    responses::mount_sse_once(&server, first_response).await;
+
+    let second_response = sse(vec![
+        ev_assistant_message("msg-1", "bad id rejected"),
+        ev_completed("resp-2"),
+    ]);
+    let second_mock = responses::mount_sse_once(&server, second_response).await;
+
+    let session_model = session_configured.model.clone();
+
+    codex
+        .submit(Op::UserTurn {
+            items: vec![UserInput::Text {
+                text: "please update the active plan with a bad id".into(),
+                text_elements: Vec::new(),
+            }],
+            final_output_json_schema: None,
+            cwd: cwd.path().to_path_buf(),
+            approval_policy: AskForApproval::Never,
+            sandbox_policy: SandboxPolicy::DangerFullAccess,
+            model: session_model,
+            effort: None,
+            summary: None,
+            service_tier: None,
+            collaboration_mode: None,
+            personality: None,
+        })
+        .await?;
+
+    wait_for_event(&codex, |event| matches!(event, EventMsg::TurnComplete(_))).await;
+
+    let req = second_mock.single_request();
+    let (output_text, _success_flag) = call_output(&req, call_id);
+    assert!(output_text.contains("failed to update active thread plan row missing-row"));
+
+    let active_plan = db
+        .get_active_thread_plan(session_configured.session_id.to_string().as_str())
+        .await?
+        .expect("active plan should remain stored");
+    assert_eq!(active_plan.items[0].status, ThreadPlanItemStatus::Pending);
 
     Ok(())
 }
