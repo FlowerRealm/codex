@@ -774,7 +774,7 @@ async fn standard_openai_models_response_enriches_known_models_and_replaces_memb
 }
 
 #[tokio::test]
-async fn standard_openai_models_response_surfaces_unknown_models_with_visible_fallback_metadata() {
+async fn standard_openai_models_response_hides_unknown_models_with_fallback_metadata() {
     let server = MockServer::start().await;
     mount_openai_models_once(&server, &["acme-custom-model"]).await;
 
@@ -797,12 +797,12 @@ async fn standard_openai_models_response_surfaces_unknown_models_with_visible_fa
     assert!(
         available
             .iter()
-            .any(|preset| preset.model == "acme-custom-model"),
-        "unknown remote models should still be selectable"
+            .all(|preset| preset.model != "acme-custom-model" || !preset.show_in_picker),
+        "unknown remote models should stay hidden until we have trusted capability metadata"
     );
 
     let model_info = manager.get_model_info("acme-custom-model", &config).await;
-    assert_eq!(model_info.visibility, ModelVisibility::List);
+    assert_eq!(model_info.visibility, ModelVisibility::Hide);
     assert_eq!(
         model_info.description.as_deref(),
         Some("Remote model discovered from /v1/models.")

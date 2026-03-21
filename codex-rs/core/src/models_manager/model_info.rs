@@ -111,7 +111,7 @@ pub(crate) fn remote_model_info_from_slug(slug: &str) -> ModelInfo {
     );
     fallback_model_info(
         slug,
-        ModelVisibility::List,
+        ModelVisibility::Hide,
         Some(REMOTE_DISCOVERED_DESCRIPTION.to_string()),
     )
 }
