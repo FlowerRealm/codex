@@ -32,6 +32,13 @@ use crate::multi_agents::format_agent_picker_item_name;
 use crate::multi_agents::next_agent_shortcut_matches;
 use crate::multi_agents::previous_agent_shortcut_matches;
 use crate::pager_overlay::Overlay;
+use crate::provider_flow::ProviderField;
+use crate::provider_flow::ProviderFlowData;
+use crate::provider_flow::ProviderFlowLocation;
+use crate::provider_flow::ProviderFlowSource;
+use crate::provider_flow::ProviderScreen;
+use crate::provider_flow::current_provider_id_for_scope;
+use crate::provider_flow::validate_provider_id;
 use crate::render::highlight::highlight_bash_to_lines;
 use crate::render::renderable::Renderable;
 use crate::resume_picker::SessionSelection;
@@ -847,6 +854,210 @@ impl App {
         self.config = config;
         self.active_profile = self.config.active_profile.clone();
         self.refresh_status_line();
+        Ok(())
+    }
+
+    async fn open_provider_flow_after_refresh(
+        &mut self,
+        source: ProviderFlowSource,
+        scope: SettingsScope,
+        screen: ProviderScreen,
+    ) -> Result<()> {
+        self.refresh_config_after_provider_change().await?;
+        self.chat_widget.open_provider_flow(source, scope, screen);
+        Ok(())
+    }
+
+    async fn save_provider_create_draft(
+        &mut self,
+        source: ProviderFlowSource,
+        scope: SettingsScope,
+    ) -> Result<()> {
+        let draft = self.chat_widget.provider_create_draft().clone();
+        let provider_id = draft.id.trim().to_string();
+        let data = ProviderFlowData::from_config(
+            &self.config,
+            scope.normalized(self.active_profile.as_deref()),
+        );
+        validate_provider_id(&provider_id, &data.rows, None)
+            .map_err(|err| color_eyre::eyre::eyre!(err))?;
+        if draft.name.trim().is_empty() {
+            return Err(color_eyre::eyre::eyre!("Display name is required."));
+        }
+        if draft.base_url.trim().is_empty() {
+            return Err(color_eyre::eyre::eyre!("Base URL is required."));
+        }
+
+        let provider = draft.to_provider();
+        let api_key_input = {
+            let api_key = draft.api_key.trim();
+            if api_key.eq_ignore_ascii_case("CLEAR") {
+                ProviderApiKeyInput::Clear
+            } else if !api_key.is_empty() {
+                ProviderApiKeyInput::Set(api_key.to_string())
+            } else {
+                ProviderApiKeyInput::KeepExisting
+            }
+        };
+
+        self.persist_model_provider(None, provider_id.clone(), provider, api_key_input)
+            .await?;
+        self.chat_widget.clear_provider_create_draft();
+        self.open_provider_flow_after_refresh(
+            source,
+            scope.normalized(self.active_profile.as_deref()),
+            ProviderScreen::Detail { provider_id },
+        )
+        .await
+    }
+
+    async fn save_provider_field_edit(
+        &mut self,
+        location: ProviderFlowLocation,
+        provider_id: String,
+        field: ProviderField,
+        value: String,
+    ) -> Result<()> {
+        let scope = location.scope.normalized(self.active_profile.as_deref());
+        let data = ProviderFlowData::from_config(&self.config, scope);
+        let Some(row) = data.row(&provider_id).cloned() else {
+            return Err(color_eyre::eyre::eyre!(
+                "Provider `{provider_id}` not found."
+            ));
+        };
+
+        match field {
+            ProviderField::ApiKey => {
+                let api_key_input = {
+                    let api_key = value.trim();
+                    if api_key.eq_ignore_ascii_case("CLEAR") {
+                        ProviderApiKeyInput::Clear
+                    } else if !api_key.is_empty() {
+                        ProviderApiKeyInput::Set(api_key.to_string())
+                    } else {
+                        ProviderApiKeyInput::KeepExisting
+                    }
+                };
+                self.persist_model_provider(
+                    Some(provider_id.clone()),
+                    provider_id.clone(),
+                    row.provider.clone(),
+                    api_key_input,
+                )
+                .await?;
+                self.open_provider_flow_after_refresh(
+                    location.source,
+                    location.scope.normalized(self.active_profile.as_deref()),
+                    ProviderScreen::Detail { provider_id },
+                )
+                .await?;
+            }
+            ProviderField::Id => {
+                let _ = (row, value);
+                return Err(color_eyre::eyre::eyre!(
+                    "Provider IDs are stable references. Create a new provider instead of renaming one in place."
+                ));
+            }
+            ProviderField::Name | ProviderField::BaseUrl => {
+                if row.is_builtin {
+                    return Err(color_eyre::eyre::eyre!(
+                        "Built-in providers cannot be edited. Create a custom provider instead."
+                    ));
+                }
+                let mut provider = row.provider.clone();
+                match field {
+                    ProviderField::Name => {
+                        if value.trim().is_empty() {
+                            return Err(color_eyre::eyre::eyre!("Display name is required."));
+                        }
+                        provider.name = value.trim().to_string();
+                    }
+                    ProviderField::BaseUrl => {
+                        if value.trim().is_empty() {
+                            return Err(color_eyre::eyre::eyre!("Base URL is required."));
+                        }
+                        provider.base_url = Some(value.trim().to_string());
+                    }
+                    ProviderField::Id | ProviderField::ApiKey => unreachable!(),
+                }
+                self.persist_model_provider(
+                    Some(provider_id.clone()),
+                    provider_id.clone(),
+                    provider,
+                    ProviderApiKeyInput::KeepExisting,
+                )
+                .await?;
+                self.open_provider_flow_after_refresh(
+                    location.source,
+                    location.scope.normalized(self.active_profile.as_deref()),
+                    ProviderScreen::Detail { provider_id },
+                )
+                .await?;
+            }
+        }
+        Ok(())
+    }
+
+    async fn persist_model_provider(
+        &mut self,
+        original_id: Option<String>,
+        id: String,
+        provider: codex_core::ModelProviderInfo,
+        api_key_input: ProviderApiKeyInput,
+    ) -> Result<()> {
+        let mut builder =
+            ConfigEditsBuilder::new(&self.config.codex_home).set_model_provider(&id, &provider);
+        if let Some(original_id) = original_id.as_deref()
+            && original_id != id
+        {
+            builder = builder.remove_model_provider(original_id);
+        }
+        builder
+            .apply()
+            .await
+            .map_err(|err| color_eyre::eyre::eyre!(err.to_string()))?;
+
+        match api_key_input {
+            ProviderApiKeyInput::KeepExisting => {
+                if let Some(original_id) = original_id
+                    .as_deref()
+                    .filter(|original_id| *original_id != id)
+                {
+                    match codex_core::read_provider_api_key(&self.config.codex_home, original_id) {
+                        Ok(Some(existing_key)) => {
+                            codex_core::store_provider_api_key(
+                                &self.config.codex_home,
+                                &id,
+                                &existing_key,
+                            )?;
+                            codex_core::clear_provider_api_key(
+                                &self.config.codex_home,
+                                original_id,
+                            )?;
+                        }
+                        Ok(None) => {}
+                        Err(err) => return Err(err.into()),
+                    }
+                }
+            }
+            ProviderApiKeyInput::Set(api_key) => {
+                codex_core::activate_provider_api_key(
+                    &self.config.codex_home,
+                    &id,
+                    &provider,
+                    self.config.mcp_oauth_credentials_store_mode,
+                    &api_key,
+                )?;
+            }
+            ProviderApiKeyInput::Clear => {
+                codex_core::clear_provider_credentials(
+                    &self.config.codex_home,
+                    &id,
+                    &provider,
+                    self.config.mcp_oauth_credentials_store_mode,
+                )?;
+            }
+        }
         Ok(())
     }
 
@@ -3088,8 +3299,55 @@ impl App {
             AppEvent::OpenAllModelsPopup { models } => {
                 self.chat_widget.open_all_models_popup(models);
             }
-            AppEvent::OpenProviderUsageScriptEditor { id } => {
-                self.chat_widget.open_provider_usage_script_editor(id);
+            AppEvent::OpenProviderFlow {
+                source,
+                scope,
+                screen,
+            } => {
+                self.chat_widget.open_provider_flow(source, scope, screen);
+            }
+            AppEvent::OpenProviderScopePicker {
+                source,
+                current_scope,
+                current_screen,
+            } => {
+                self.chat_widget
+                    .open_provider_scope_picker(source, current_scope, current_screen);
+            }
+            AppEvent::OpenProviderFieldEditor {
+                location,
+                provider_id,
+                field,
+            } => {
+                self.chat_widget
+                    .open_provider_field_editor(location, provider_id, field);
+            }
+            AppEvent::UpdateProviderCreateDraft { field, value } => {
+                self.chat_widget.update_provider_create_draft(field, value);
+            }
+            AppEvent::SaveProviderCreateDraft { source, scope } => {
+                if let Err(err) = self.save_provider_create_draft(source, scope).await {
+                    self.chat_widget
+                        .add_error_message(format!("Failed to save provider: {err}"));
+                }
+            }
+            AppEvent::SaveProviderFieldEdit {
+                location,
+                provider_id,
+                field,
+                value,
+            } => {
+                if let Err(err) = self
+                    .save_provider_field_edit(location, provider_id, field, value)
+                    .await
+                {
+                    self.chat_widget
+                        .add_error_message(format!("Failed to save provider field: {err}"));
+                }
+            }
+            AppEvent::OpenProviderUsageScriptEditor { id, return_to } => {
+                self.chat_widget
+                    .open_provider_usage_script_editor(id, return_to);
             }
             AppEvent::OpenFullAccessConfirmation {
                 preset,
@@ -3437,93 +3695,6 @@ impl App {
                     let _ = (preset, mode);
                 }
             }
-            AppEvent::PersistModelProvider {
-                original_id,
-                id,
-                provider,
-                api_key_input,
-            } => {
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .set_model_provider(&id, &provider)
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        let credential_result = match api_key_input {
-                            ProviderApiKeyInput::KeepExisting => {
-                                if let Some(original_id) = original_id
-                                    .as_deref()
-                                    .filter(|original_id| *original_id != id)
-                                {
-                                    match codex_core::read_provider_api_key(
-                                        &self.config.codex_home,
-                                        original_id,
-                                    ) {
-                                        Ok(Some(existing_key)) => {
-                                            codex_core::store_provider_api_key(
-                                                &self.config.codex_home,
-                                                &id,
-                                                &existing_key,
-                                            )
-                                            .and_then(
-                                                |()| {
-                                                    codex_core::clear_provider_api_key(
-                                                        &self.config.codex_home,
-                                                        original_id,
-                                                    )
-                                                    .map(|_| ())
-                                                },
-                                            )
-                                        }
-                                        Ok(None) => Ok(()),
-                                        Err(err) => Err(err),
-                                    }
-                                } else {
-                                    Ok(())
-                                }
-                            }
-                            ProviderApiKeyInput::Set(api_key) => {
-                                codex_core::activate_provider_api_key(
-                                    &self.config.codex_home,
-                                    &id,
-                                    &provider,
-                                    self.config.mcp_oauth_credentials_store_mode,
-                                    &api_key,
-                                )
-                            }
-                            ProviderApiKeyInput::Clear => codex_core::clear_provider_credentials(
-                                &self.config.codex_home,
-                                &id,
-                                &provider,
-                                self.config.mcp_oauth_credentials_store_mode,
-                            )
-                            .map(|_| ()),
-                        };
-                        if let Err(err) = credential_result {
-                            self.chat_widget.add_error_message(format!(
-                                "Provider saved but failed to store credentials: {err}"
-                            ));
-                        } else if let Err(err) = self.refresh_config_after_provider_change().await {
-                            self.chat_widget.add_error_message(format!(
-                                "Provider saved but failed to reload config: {err}"
-                            ));
-                        } else {
-                            self.chat_widget.add_info_message(
-                                format!("Saved provider {id}"),
-                                Some(
-                                    "Use Enter in /provider to switch the default provider."
-                                        .to_string(),
-                                ),
-                            );
-                        }
-                    }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist model provider");
-                        self.chat_widget
-                            .add_error_message(format!("Failed to save provider `{id}`: {err}"));
-                    }
-                }
-            }
             AppEvent::RemoveModelProvider { id } => {
                 match ConfigEditsBuilder::new(&self.config.codex_home)
                     .remove_model_provider(&id)
@@ -3552,6 +3723,7 @@ impl App {
             AppEvent::PersistProviderUsageScript {
                 provider_id,
                 script,
+                return_to,
             } => match crate::provider_usage::save_provider_usage_script(
                 &self.config,
                 &provider_id,
@@ -3565,6 +3737,13 @@ impl App {
                             "Usage script saved but failed to reload config: {err}"
                         ));
                     } else {
+                        if let Some(return_to) = return_to {
+                            self.chat_widget.open_provider_flow(
+                                return_to.source,
+                                return_to.scope,
+                                return_to.screen,
+                            );
+                        }
                         self.chat_widget.add_info_message(
                             format!(
                                 "Saved usage script for provider {provider_id} to {}",
@@ -3581,7 +3760,10 @@ impl App {
                     ));
                 }
             },
-            AppEvent::DeleteProviderUsageScript { provider_id } => {
+            AppEvent::DeleteProviderUsageScript {
+                provider_id,
+                return_to,
+            } => {
                 match crate::provider_usage::delete_provider_usage_script(
                     &self.config,
                     &provider_id,
@@ -3594,6 +3776,13 @@ impl App {
                                 "Usage script deleted but failed to reload config: {err}"
                             ));
                         } else {
+                            if let Some(return_to) = return_to {
+                                self.chat_widget.open_provider_flow(
+                                    return_to.source,
+                                    return_to.scope,
+                                    return_to.screen,
+                                );
+                            }
                             self.chat_widget.add_info_message(
                                 format!(
                                     "Removed usage script override for provider {provider_id} from {}",
@@ -3611,31 +3800,59 @@ impl App {
                     }
                 }
             }
-            AppEvent::PersistDefaultModelProvider { id } => {
-                let profile = self.active_profile.as_deref();
-                match ConfigEditsBuilder::new(&self.config.codex_home)
-                    .with_profile(profile)
-                    .set_default_model_provider(&id)
-                    .apply()
-                    .await
-                {
-                    Ok(()) => {
-                        if let Err(err) = self.refresh_config_after_provider_change().await {
-                            self.chat_widget.add_error_message(format!(
-                                "Provider switched but failed to reload config: {err}"
-                            ));
-                        } else {
-                            self.chat_widget.add_info_message(
-                                format!("Provider changed to {id}"),
-                                /*hint*/ None,
-                            );
-                        }
+            AppEvent::PersistDefaultModelProvider {
+                id,
+                scope,
+                return_to,
+            } => {
+                let scope = scope.normalized(self.active_profile.as_deref());
+                if current_provider_id_for_scope(&self.config, scope) == id {
+                    if let Some(return_to) = return_to {
+                        self.chat_widget.open_provider_flow(
+                            return_to.source,
+                            return_to.scope,
+                            return_to.screen,
+                        );
                     }
-                    Err(err) => {
-                        tracing::error!(error = %err, "failed to persist default model provider");
-                        self.chat_widget.add_error_message(format!(
-                            "Failed to switch default provider to `{id}`: {err}"
-                        ));
+                } else {
+                    let profile = match scope {
+                        SettingsScope::Global => None,
+                        SettingsScope::ActiveProfile => self.active_profile.as_deref(),
+                    };
+                    match ConfigEditsBuilder::new(&self.config.codex_home)
+                        .with_profile(profile)
+                        .set_default_model_provider(&id)
+                        .apply()
+                        .await
+                    {
+                        Ok(()) => {
+                            if let Err(err) = self.refresh_config_after_provider_change().await {
+                                self.chat_widget.add_error_message(format!(
+                                    "Provider switched but failed to reload config: {err}"
+                                ));
+                            } else {
+                                if let Some(return_to) = return_to {
+                                    self.chat_widget.open_provider_flow(
+                                        return_to.source,
+                                        return_to.scope,
+                                        return_to.screen,
+                                    );
+                                }
+                                self.chat_widget.add_info_message(
+                                    format!("Current provider changed to {id}"),
+                                    /*hint*/ None,
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            tracing::error!(
+                                error = %err,
+                                "failed to persist default model provider"
+                            );
+                            self.chat_widget.add_error_message(format!(
+                                "Failed to switch default provider to `{id}`: {err}"
+                            ));
+                        }
                     }
                 }
             }

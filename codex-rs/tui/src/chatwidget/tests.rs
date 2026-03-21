@@ -1939,6 +1939,7 @@ async fn make_chatwidget_manual_with_animation_mode(
         rate_limit_poller: None,
         provider_usage: None,
         provider_usage_poller: None,
+        provider_create_draft: crate::provider_flow::ProviderDraft::new(),
         adaptive_chunking: crate::streaming::chunking::AdaptiveChunkingPolicy::default(),
         stream_controller: None,
         plan_stream_controller: None,
@@ -7899,6 +7900,36 @@ async fn settings_editor_escape_returns_to_settings_section() {
     chat.handle_key_event(KeyEvent::from(KeyCode::Esc));
 
     assert_eq!(render_bottom_popup(&chat, 88), section_popup);
+}
+
+#[tokio::test]
+async fn provider_root_refresh_preserves_selected_row() {
+    let (mut chat, _rx, _op_rx) = make_chatwidget_manual(Some("gpt-5.2-codex")).await;
+    chat.open_provider_flow(
+        crate::provider_flow::ProviderFlowSource::SlashCommand,
+        crate::settings::data::SettingsScope::Global,
+        crate::provider_flow::ProviderScreen::Root,
+    );
+
+    chat.handle_key_event(KeyEvent::from(KeyCode::Down));
+
+    assert_eq!(
+        chat.bottom_pane
+            .selected_index_for_active_view(crate::provider_flow_view::PROVIDER_ROOT_VIEW_ID),
+        Some(1)
+    );
+
+    chat.open_provider_flow(
+        crate::provider_flow::ProviderFlowSource::SlashCommand,
+        crate::settings::data::SettingsScope::Global,
+        crate::provider_flow::ProviderScreen::Root,
+    );
+
+    assert_eq!(
+        chat.bottom_pane
+            .selected_index_for_active_view(crate::provider_flow_view::PROVIDER_ROOT_VIEW_ID),
+        Some(1)
+    );
 }
 
 #[cfg(all(not(target_os = "linux"), feature = "voice-input"))]

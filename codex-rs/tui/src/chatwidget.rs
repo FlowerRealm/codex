@@ -41,11 +41,16 @@ use self::realtime::PendingSteerCompareKey;
 use crate::app_event::RealtimeAudioDeviceKind;
 #[cfg(all(not(target_os = "linux"), feature = "voice-input"))]
 use crate::audio_device::list_realtime_audio_device_names;
-use crate::bottom_pane::ProviderManagerView;
 use crate::bottom_pane::ProviderUsageScriptEditorView;
 use crate::bottom_pane::StatusLineItem;
 use crate::bottom_pane::StatusLinePreviewData;
 use crate::bottom_pane::StatusLineSetupView;
+use crate::provider_flow::ProviderField;
+use crate::provider_flow::ProviderFlowLocation;
+use crate::provider_flow::ProviderFlowSource;
+use crate::provider_flow::ProviderScreen;
+use crate::provider_flow_view::PROVIDER_DETAIL_VIEW_ID;
+use crate::provider_flow_view::PROVIDER_ROOT_VIEW_ID;
 use crate::provider_usage::ProviderUsageRefreshResult;
 use crate::provider_usage::ProviderUsageSnapshot;
 use crate::provider_usage::can_edit_provider_usage_scripts;
@@ -68,8 +73,6 @@ use codex_core::config::types::ApprovalsReviewer;
 use codex_core::config::types::Notifications;
 use codex_core::config::types::WindowsSandboxModeToml;
 use codex_core::config_loader::ConfigLayerStackOrdering;
-use codex_core::default_client::build_reqwest_client;
-use codex_core::features::FEATURES;
 use codex_core::features::Feature;
 use codex_core::find_thread_name_by_id;
 use codex_core::git_info::current_branch_name;
@@ -657,6 +660,7 @@ pub(crate) struct ChatWidget {
     /// where the overlay may briefly treat new tail content as already cached.
     active_cell_revision: u64,
     config: Config,
+    provider_create_draft: crate::provider_flow::ProviderDraft,
     /// The unmasked collaboration mode settings (always Default mode).
     ///
     /// Masks are applied on top of this base mode to derive the effective mode.
@@ -1551,12 +1555,20 @@ impl ChatWidget {
     }
 
     pub(crate) fn open_provider_manager(&mut self) {
-        let view = ProviderManagerView::new(&self.config, self.app_event_tx.clone());
-        self.bottom_pane.show_view(Box::new(view));
-        self.request_redraw();
+        self.open_provider_flow(
+            ProviderFlowSource::SlashCommand,
+            crate::settings::data::SettingsScope::default_for(
+                self.config.active_profile.as_deref(),
+            ),
+            ProviderScreen::Root,
+        );
     }
 
-    pub(crate) fn open_provider_usage_script_editor(&mut self, id: String) {
+    pub(crate) fn open_provider_usage_script_editor(
+        &mut self,
+        id: String,
+        return_to: Option<ProviderFlowLocation>,
+    ) {
         if !can_edit_provider_usage_scripts(&self.config) {
             self.add_error_message(
                 "Usage scripts can only be edited inside a trusted project.".to_string(),
@@ -1566,7 +1578,8 @@ impl ChatWidget {
 
         match provider_usage_editor_state(&self.config, &id) {
             Ok(state) => {
-                let view = ProviderUsageScriptEditorView::new(state, self.app_event_tx.clone());
+                let view =
+                    ProviderUsageScriptEditorView::new(state, self.app_event_tx.clone(), return_to);
                 self.bottom_pane.show_view(Box::new(view));
                 self.request_redraw();
             }
@@ -1576,6 +1589,86 @@ impl ChatWidget {
                 ));
             }
         }
+    }
+
+    pub(crate) fn open_provider_flow(
+        &mut self,
+        source: ProviderFlowSource,
+        scope: crate::settings::data::SettingsScope,
+        screen: ProviderScreen,
+    ) {
+        let mut params = crate::provider_flow_view::build_provider_view_params(
+            &self.config,
+            &self.provider_create_draft,
+            source,
+            scope,
+            &screen,
+        );
+        let view_id = match &screen {
+            ProviderScreen::Root => PROVIDER_ROOT_VIEW_ID,
+            ProviderScreen::Detail { .. } | ProviderScreen::Create => PROVIDER_DETAIL_VIEW_ID,
+        };
+        let selected_idx = self.bottom_pane.selected_index_for_active_view(view_id);
+        if let Some(selected_idx) = selected_idx {
+            params.initial_selected_idx = Some(selected_idx);
+            self.bottom_pane
+                .replace_selection_view_if_active(view_id, params);
+        } else {
+            self.bottom_pane.show_selection_view(params);
+        }
+        self.request_redraw();
+    }
+
+    pub(crate) fn open_provider_scope_picker(
+        &mut self,
+        source: ProviderFlowSource,
+        current_scope: crate::settings::data::SettingsScope,
+        current_screen: ProviderScreen,
+    ) {
+        let params = crate::provider_flow_view::build_provider_scope_picker_params(
+            source,
+            current_scope,
+            current_screen,
+            self.config.active_profile.as_deref(),
+        );
+        self.bottom_pane.show_selection_view(params);
+        self.request_redraw();
+    }
+
+    pub(crate) fn open_provider_field_editor(
+        &mut self,
+        location: ProviderFlowLocation,
+        provider_id: Option<String>,
+        field: ProviderField,
+    ) {
+        match crate::provider_flow_view::build_provider_field_editor(
+            &self.config,
+            &self.provider_create_draft,
+            location,
+            provider_id,
+            field,
+            self.app_event_tx.clone(),
+        ) {
+            Ok(view) => {
+                self.bottom_pane.show_view(Box::new(view));
+                self.request_redraw();
+            }
+            Err(err) => {
+                self.add_error_message(format!("Failed to open provider field editor: {err}"));
+            }
+        }
+    }
+
+    pub(crate) fn update_provider_create_draft(&mut self, field: ProviderField, value: String) {
+        self.provider_create_draft.update_field(field, value);
+    }
+
+    pub(crate) fn provider_create_draft(&self) -> &crate::provider_flow::ProviderDraft {
+        &self.provider_create_draft
+    }
+
+    pub(crate) fn clear_provider_create_draft(&mut self) {
+        self.provider_create_draft = crate::provider_flow::ProviderDraft::new();
     }
 
     pub(crate) fn open_feedback_consent(&mut self, category: crate::app_event::FeedbackCategory) {
@@ -3682,6 +3775,7 @@ impl ChatWidget {
             active_cell,
             active_cell_revision: 0,
             config,
+            provider_create_draft: crate::provider_flow::ProviderDraft::new(),
             skills_all: Vec::new(),
             skills_initial_state: None,
             current_collaboration_mode,
@@ -3870,6 +3964,7 @@ impl ChatWidget {
             active_cell,
             active_cell_revision: 0,
             config,
+            provider_create_draft: crate::provider_flow::ProviderDraft::new(),
             skills_all: Vec::new(),
             skills_initial_state: None,
             current_collaboration_mode,
@@ -4050,6 +4145,7 @@ impl ChatWidget {
             active_cell: None,
             active_cell_revision: 0,
             config,
+            provider_create_draft: crate::provider_flow::ProviderDraft::new(),
             skills_all: Vec::new(),
             skills_initial_state: None,
             current_collaboration_mode,
@@ -6381,7 +6477,12 @@ impl ChatWidget {
         let app_event_tx = self.app_event_tx.clone();
 
         let handle = tokio::spawn(async move {
+            let auth = auth_manager.auth().await;
+            let snapshot = fetch_provider_usage_snapshot(config.clone(), auth).await;
+            app_event_tx.send(AppEvent::ProviderUsageSnapshotFetched(snapshot));
+
             let mut interval = tokio::time::interval(poll_interval);
+            interval.tick().await;
 
             loop {
                 interval.tick().await;

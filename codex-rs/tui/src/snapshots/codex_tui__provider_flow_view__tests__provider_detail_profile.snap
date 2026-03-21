@@ -1,0 +1,63 @@
+---
+source: tui/src/provider_flow_view.rs
+assertion_line: 1005
+expression: provider_view_focus_summary(&params)
+---
+title: Provider / acme
+subtitle: Acme · https://acme.example/v1 · custom Default selection writes to profile `dev`. Definition edits stay global.
+item: Default provider scope
+  current: false
+  disabled: false
+  selected_description: Switch where /provider saves the default provider selection. Provider definitions stay global.
+  shortcut: 
+  description: Currently writing model_provider under [profiles.dev].
+  disabled_reason: 
+item: Set current provider
+  current: true
+  disabled: false
+  selected_description: 
+  shortcut: 
+  description: Already the current provider for this scope.
+  disabled_reason: 
+item: Provider ID
+  current: false
+  disabled: true
+  selected_description: Provider IDs are stable references. To change one safely, create a new provider and switch defaults.
+  shortcut: 
+  description: Current: acme
+  disabled_reason: Provider IDs are stable references. Create a new provider instead of renaming one in place.
+item: Display name
+  current: false
+  disabled: false
+  selected_description: Edit the human-readable provider name stored in config.toml.
+  shortcut: 
+  description: Current: Acme
+  disabled_reason: 
+item: Base URL
+  current: false
+  disabled: false
+  selected_description: Edit the provider base URL stored in config.toml.
+  shortcut: 
+  description: Current: https://acme.example/v1
+  disabled_reason: 
+item: API key
+  current: false
+  disabled: false
+  selected_description: Leave the field blank to keep the existing secure value. Type CLEAR to remove it.
+  shortcut: 
+  description: No secure API key is stored for this provider.
+  disabled_reason: 
+item: Usage script
+  current: false
+  disabled: true
+  selected_description: Usage scripts live under .codex/providers/<provider-id>/usage.js in the trusted project.
+  shortcut: 
+  description: Usage scripts can only be edited inside a trusted project.
+  disabled_reason: Open /provider inside a trusted project to edit usage scripts.
+item: Delete provider
+  current: false
+  disabled: true
+  selected_description: 
+  shortcut: 
+  description: Remove this custom provider definition.
+  disabled_reason: Switch away from the current provider before deleting it.
