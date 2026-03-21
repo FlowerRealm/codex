@@ -156,10 +156,10 @@ pub(crate) async fn handle_update_plan(
                 .to_string(),
         ));
     }
-    let args = parse_update_plan_arguments(&arguments)?;
-    if let Some(active_plan) = try_update_active_thread_plan(session, &args).await? {
+    let mut args = parse_update_plan_arguments(&arguments)?;
+    if try_update_active_thread_plan(session, &mut args).await? {
         session
-            .send_event(turn_context, EventMsg::PlanUpdate(active_plan))
+            .send_event(turn_context, EventMsg::PlanUpdate(args))
             .await;
         return Ok("Plan updated".to_string());
     }
@@ -177,13 +177,10 @@ fn parse_update_plan_arguments(arguments: &str) -> Result<UpdatePlanArgs, Functi
 
 async fn try_update_active_thread_plan(
     session: &Session,
-    args: &UpdatePlanArgs,
-) -> Result<Option<UpdatePlanArgs>, FunctionCallError> {
-    if args.plan.is_empty() || args.plan.iter().any(|item| item.id.is_none()) {
-        return Ok(None);
-    }
+    args: &mut UpdatePlanArgs,
+) -> Result<bool, FunctionCallError> {
     let Some(state_db) = session.state_db() else {
-        return Ok(None);
+        return Ok(false);
     };
     let thread_id = session.conversation_id.to_string();
     let Some(active_plan) = state_db
@@ -193,7 +190,7 @@ async fn try_update_active_thread_plan(
             FunctionCallError::RespondToModel(format!("failed to load active thread plan: {err}"))
         })?
     else {
-        return Ok(None);
+        return Ok(false);
     };
 
     let mut updated = false;
@@ -226,7 +223,7 @@ async fn try_update_active_thread_plan(
         updated = true;
     }
     if !updated {
-        return Ok(None);
+        return Ok(false);
     }
     let refreshed = state_db
         .get_active_thread_plan(thread_id.as_str())
@@ -237,8 +234,19 @@ async fn try_update_active_thread_plan(
             ))
         })?
         .unwrap_or(active_plan);
-    Ok(Some(update_plan_from_thread_plan_items(
-        refreshed.items.as_slice(),
-        args.explanation.clone(),
-    )))
+    let refreshed_args =
+        update_plan_from_thread_plan_items(refreshed.items.as_slice(), args.explanation.clone());
+    for item in &mut args.plan {
+        let Some(row_id) = item.id.as_deref() else {
+            continue;
+        };
+        if let Some(refreshed_item) = refreshed_args
+            .plan
+            .iter()
+            .find(|candidate| candidate.id.as_deref() == Some(row_id))
+        {
+            item.status = refreshed_item.status.clone();
+        }
+    }
+    Ok(true)
 }

@@ -304,6 +304,14 @@ async fn update_plan_tool_keeps_non_id_rows_when_active_plan_exists() -> anyhow:
     let (output_text, _success_flag) = call_output(&req, call_id);
     assert_eq!(output_text, "Plan updated");
 
+    let active_plan = db
+        .get_active_thread_plan(session_configured.session_id.to_string().as_str())
+        .await?
+        .expect("active plan should remain stored");
+    assert_eq!(active_plan.items.len(), 1);
+    assert_eq!(active_plan.items[0].row_id, "plan-1");
+    assert_eq!(active_plan.items[0].status, ThreadPlanItemStatus::Completed);
+
     Ok(())
 }
 
