@@ -15,8 +15,7 @@ pub async fn supported_models(
 ) -> Vec<Model> {
     let refresh_strategy = match force_refresh {
         Some(true) => RefreshStrategy::Online,
-        Some(false) => RefreshStrategy::Offline,
-        None => RefreshStrategy::OnlineIfUncached,
+        Some(false) | None => RefreshStrategy::OnlineIfUncached,
     };
     thread_manager
         .list_models(refresh_strategy)

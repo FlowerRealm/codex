@@ -326,3 +326,90 @@ model_provider = "openai"
 
     Ok(())
 }
+
+#[tokio::test]
+async fn list_models_force_refresh_false_still_refreshes_when_uncached() -> Result<()> {
+    let server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/v1/models"))
+        .respond_with(ResponseTemplate::new(200).set_body_json(ModelsResponse {
+            models: vec![serde_json::from_value(json!({
+                "slug": "force-refresh-false-model",
+                "display_name": "Force Refresh False Model",
+                "description": "Force refresh false model",
+                "default_reasoning_level": "medium",
+                "supported_reasoning_levels": [
+                    {"effort": "low", "description": "low"},
+                    {"effort": "medium", "description": "medium"}
+                ],
+                "shell_type": "shell_command",
+                "visibility": "list",
+                "minimal_client_version": [0, 1, 0],
+                "supported_in_api": true,
+                "priority": 1,
+                "upgrade": null,
+                "base_instructions": "base instructions",
+                "supports_reasoning_summaries": false,
+                "support_verbosity": false,
+                "default_verbosity": null,
+                "apply_patch_tool_type": null,
+                "truncation_policy": {"mode": "bytes", "limit": 10000},
+                "supports_parallel_tool_calls": false,
+                "supports_image_detail_original": false,
+                "context_window": 272000,
+                "experimental_supported_tools": []
+            }))
+            .expect("valid model")],
+        }))
+        .expect(1)
+        .mount(&server)
+        .await;
+
+    let codex_home = TempDir::new()?;
+    std::fs::write(
+        codex_home.path().join("config.toml"),
+        format!(
+            r#"
+model = "gpt-5"
+approval_policy = "never"
+sandbox_mode = "read-only"
+model_provider = "custom"
+
+[model_providers.custom]
+name = "Custom Provider"
+base_url = "{}/v1"
+wire_api = "responses"
+request_max_retries = 0
+stream_max_retries = 0
+"#,
+            server.uri()
+        ),
+    )?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_TIMEOUT, mcp.initialize()).await??;
+
+    let request_id = mcp
+        .send_list_models_request(ModelListParams {
+            limit: Some(100),
+            cursor: None,
+            include_hidden: Some(true),
+            force_refresh: Some(false),
+        })
+        .await?;
+    let response: JSONRPCResponse = timeout(
+        DEFAULT_TIMEOUT,
+        mcp.read_stream_until_response_message(RequestId::Integer(request_id)),
+    )
+    .await??;
+    let ModelListResponse { data, next_cursor } = to_response(response)?;
+
+    assert!(next_cursor.is_none());
+    assert!(
+        data.iter()
+            .any(|model| model.model == "force-refresh-false-model"),
+        "forceRefresh=false should still allow uncached remote refreshes"
+    );
+
+    Ok(())
+}
