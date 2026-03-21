@@ -7,6 +7,7 @@ use crate::error_code::INVALID_REQUEST_ERROR_CODE;
 use crate::outgoing_message::ClientRequestResult;
 use crate::outgoing_message::ThreadScopedOutgoingMessageSender;
 use crate::server_request_error::is_turn_transition_server_request_error;
+use crate::thread_state::PendingThreadHistoryMutationKind;
 use crate::thread_state::ThreadListenerCommand;
 use crate::thread_state::ThreadState;
 use crate::thread_state::TurnSummary;
@@ -85,6 +86,7 @@ use codex_app_server_protocol::ThreadRealtimeErrorNotification;
 use codex_app_server_protocol::ThreadRealtimeItemAddedNotification;
 use codex_app_server_protocol::ThreadRealtimeOutputAudioDeltaNotification;
 use codex_app_server_protocol::ThreadRealtimeStartedNotification;
+use codex_app_server_protocol::ThreadRestoreResponse;
 use codex_app_server_protocol::ThreadRollbackResponse;
 use codex_app_server_protocol::ThreadTokenUsage;
 use codex_app_server_protocol::ThreadTokenUsageUpdatedNotification;
@@ -1293,15 +1295,16 @@ pub(crate) async fn apply_bespoke_event_handling(
             let message = ev.message.clone();
             let codex_error_info = ev.codex_error_info.clone();
 
-            // If this error belongs to an in-flight `thread/rollback` request, fail that request
-            // (and clear pending state) so subsequent rollbacks are unblocked.
+            // If this error belongs to an in-flight `thread/rollback` or `thread/restore`
+            // request, fail that request (and clear pending state) so subsequent restores are
+            // unblocked.
             //
             // Don't send a notification for this error.
             if matches!(
                 codex_error_info,
                 Some(CoreCodexErrorInfo::ThreadRollbackFailed)
             ) {
-                return handle_thread_rollback_failed(
+                return handle_thread_restore_failed(
                     conversation_id,
                     message,
                     &thread_state,
@@ -1704,10 +1707,11 @@ pub(crate) async fn apply_bespoke_event_handling(
         EventMsg::ThreadRolledBack(_rollback_event) => {
             let pending = {
                 let mut state = thread_state.lock().await;
-                state.pending_rollbacks.take()
+                state.pending_history_mutation.take()
             };
 
-            if let Some(request_id) = pending {
+            if let Some(pending) = pending {
+                let request_id = pending.request_id;
                 let Some(rollout_path) = conversation.rollout_path() else {
                     let error = JSONRPCErrorError {
                         code: INVALID_REQUEST_ERROR_CODE,
@@ -1717,7 +1721,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                     outgoing.send_error(request_id, error).await;
                     return;
                 };
-                let response = match read_summary_from_rollout(
+                match read_summary_from_rollout(
                     rollout_path.as_path(),
                     fallback_model_provider.as_str(),
                 )
@@ -1741,7 +1745,25 @@ pub(crate) async fn apply_bespoke_event_handling(
                                         );
                                     }
                                 }
-                                ThreadRollbackResponse { thread }
+                                match pending.kind {
+                                    PendingThreadHistoryMutationKind::Rollback => {
+                                        outgoing
+                                            .send_response(
+                                                request_id,
+                                                ThreadRollbackResponse { thread },
+                                            )
+                                            .await;
+                                    }
+                                    PendingThreadHistoryMutationKind::Restore => {
+                                        outgoing
+                                            .send_response(
+                                                request_id,
+                                                ThreadRestoreResponse { thread },
+                                            )
+                                            .await;
+                                    }
+                                }
+                                return;
                             }
                             Err(err) => {
                                 let error = JSONRPCErrorError {
@@ -1769,9 +1791,7 @@ pub(crate) async fn apply_bespoke_event_handling(
                         outgoing.send_error(request_id.clone(), error).await;
                         return;
                     }
-                };
-
-                outgoing.send_response(request_id, response).await;
+                }
             }
         }
         EventMsg::ThreadNameUpdated(thread_name_event) => {
@@ -2006,15 +2026,17 @@ async fn handle_turn_interrupted(
     .await;
 }
 
-async fn handle_thread_rollback_failed(
+async fn handle_thread_restore_failed(
     _conversation_id: ThreadId,
     message: String,
     thread_state: &Arc<Mutex<ThreadState>>,
     outgoing: &ThreadScopedOutgoingMessageSender,
 ) {
-    let pending_rollback = thread_state.lock().await.pending_rollbacks.take();
+    let mut state = thread_state.lock().await;
+    let pending_rollback = state.pending_history_mutation.take();
+    drop(state);
 
-    if let Some(request_id) = pending_rollback {
+    if let Some(request_id) = pending_rollback.map(|pending| pending.request_id) {
         outgoing
             .send_error(
                 request_id,

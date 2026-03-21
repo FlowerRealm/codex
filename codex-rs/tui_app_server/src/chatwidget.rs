@@ -37,8 +37,10 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use self::realtime::PendingSteerCompareKey;
+use crate::app_backtrack::BacktrackSelection;
 use crate::app_command::AppCommand;
 use crate::app_event::RealtimeAudioDeviceKind;
+use crate::app_event::RestoreMode;
 #[cfg(all(not(target_os = "linux"), feature = "voice-input"))]
 use crate::audio_device::list_realtime_audio_device_names;
 use crate::bottom_pane::StatusLineItem;
@@ -4116,6 +4118,57 @@ impl ChatWidget {
         self.request_redraw();
     }
 
+    pub(crate) fn open_restore_mode_picker(
+        &mut self,
+        num_turns: u32,
+        selection: Option<BacktrackSelection>,
+    ) {
+        let chat_only_selection = selection.clone();
+        let files_selection = selection;
+        let items = vec![
+            SelectionItem {
+                name: "Restore chat only".to_string(),
+                description: Some(
+                    "Remove recent turns but keep current workspace files.".to_string(),
+                ),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::SubmitRestore {
+                        num_turns,
+                        restore_mode: RestoreMode::ChatOnly,
+                        selection: chat_only_selection.clone(),
+                    });
+                })],
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+            SelectionItem {
+                name: "Restore chat and files".to_string(),
+                description: Some(
+                    "Remove recent turns and restore workspace files to the earlier snapshot."
+                        .to_string(),
+                ),
+                actions: vec![Box::new(move |tx| {
+                    tx.send(AppEvent::SubmitRestore {
+                        num_turns,
+                        restore_mode: RestoreMode::ChatAndFiles,
+                        selection: files_selection.clone(),
+                    });
+                })],
+                dismiss_on_select: true,
+                ..Default::default()
+            },
+        ];
+
+        self.bottom_pane.show_selection_view(SelectionViewParams {
+            title: Some("Choose Restore Scope".to_string()),
+            subtitle: Some(format!("Restore the last {num_turns} turn(s).")),
+            footer_hint: Some(standard_popup_hint_line()),
+            items,
+            ..Default::default()
+        });
+        self.request_redraw();
+    }
+
     pub(crate) fn no_modal_or_popup_active(&self) -> bool {
         self.bottom_pane.no_modal_or_popup_active()
     }
@@ -4334,9 +4387,12 @@ impl ChatWidget {
                 }
                 self.request_quit_without_confirmation();
             }
-            // SlashCommand::Undo => {
-            //     self.app_event_tx.send(AppEvent::CodexOp(Op::Undo));
-            // }
+            SlashCommand::Restore => {
+                self.open_restore_mode_picker(/*num_turns*/ 1, /*selection*/ None);
+            }
+            SlashCommand::Undo => {
+                self.submit_op(AppCommand::undo());
+            }
             SlashCommand::Diff => {
                 self.add_diff_in_progress();
                 let tx = self.app_event_tx.clone();
@@ -4596,6 +4652,27 @@ impl ChatWidget {
                         path: prepared_args,
                     });
                 self.bottom_pane.drain_pending_submission_state();
+            }
+            SlashCommand::Restore => {
+                let num_turns = if trimmed.is_empty() {
+                    1
+                } else {
+                    match trimmed.parse::<u32>() {
+                        Ok(num_turns) => num_turns,
+                        Err(_) => {
+                            self.add_error_message(
+                                "Usage: /restore [positive_turn_count]".to_string(),
+                            );
+                            return;
+                        }
+                    }
+                };
+                if num_turns == 0 {
+                    self.add_error_message("Usage: /restore [positive_turn_count]".to_string());
+                    return;
+                }
+                self.bottom_pane.drain_pending_submission_state();
+                self.open_restore_mode_picker(num_turns, /*selection*/ None);
             }
             _ => self.dispatch_command(cmd),
         }

@@ -98,6 +98,11 @@ pub(crate) enum AppCommandView<'a> {
     ThreadRollback {
         num_turns: u32,
     },
+    RestoreTurn {
+        num_turns: u32,
+        restore_files: bool,
+    },
+    Undo,
     Review {
         review_request: &'a ReviewRequest,
     },
@@ -255,6 +260,17 @@ impl AppCommand {
         Self(Op::ThreadRollback { num_turns })
     }
 
+    pub(crate) fn restore_turn(num_turns: u32, restore_files: bool) -> Self {
+        Self(Op::RestoreTurn {
+            num_turns,
+            restore_files,
+        })
+    }
+
+    pub(crate) fn undo() -> Self {
+        Self(Op::Undo)
+    }
+
     pub(crate) fn review(review_request: ReviewRequest) -> Self {
         Self(Op::Review { review_request })
     }
@@ -381,6 +397,14 @@ impl AppCommand {
             Op::ThreadRollback { num_turns } => AppCommandView::ThreadRollback {
                 num_turns: *num_turns,
             },
+            Op::RestoreTurn {
+                num_turns,
+                restore_files,
+            } => AppCommandView::RestoreTurn {
+                num_turns: *num_turns,
+                restore_files: *restore_files,
+            },
+            Op::Undo => AppCommandView::Undo,
             Op::Review { review_request } => AppCommandView::Review { review_request },
             op => AppCommandView::Other(op),
         }

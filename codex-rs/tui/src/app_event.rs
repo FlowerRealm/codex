@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 
+use crate::app_backtrack::BacktrackSelection;
 use crate::bottom_pane::ApprovalRequest;
 use crate::bottom_pane::StatusLineItem;
 use crate::history_cell::HistoryCell;
@@ -21,7 +22,6 @@ use codex_protocol::openai_models::ModelPreset;
 use codex_protocol::protocol::Event;
 use codex_protocol::protocol::RateLimitSnapshot;
 use codex_utils_approval_presets::ApprovalPreset;
-use serde::Deserialize;
 
 use crate::settings::data::SettingsScope;
 use crate::settings::data::SettingsScreen;
@@ -35,6 +35,12 @@ use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::SandboxPolicy;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RestoreMode {
+    ChatOnly,
+    ChatAndFiles,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RealtimeAudioDeviceKind {
@@ -185,6 +191,12 @@ pub(crate) enum AppEvent {
     /// inserted history cells.
     ApplyThreadRollback {
         num_turns: u32,
+    },
+
+    SubmitRestore {
+        num_turns: u32,
+        restore_mode: RestoreMode,
+        selection: Option<BacktrackSelection>,
     },
 
     StartCommitAnimation,

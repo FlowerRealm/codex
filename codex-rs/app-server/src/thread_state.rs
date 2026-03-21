@@ -22,6 +22,18 @@ type PendingInterruptQueue = Vec<(
     crate::codex_message_processor::ApiVersion,
 )>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum PendingThreadHistoryMutationKind {
+    Rollback,
+    Restore,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct PendingThreadHistoryMutation {
+    pub(crate) request_id: ConnectionRequestId,
+    pub(crate) kind: PendingThreadHistoryMutationKind,
+}
+
 pub(crate) struct PendingThreadResumeRequest {
     pub(crate) request_id: ConnectionRequestId,
     pub(crate) rollout_path: PathBuf,
@@ -52,7 +64,7 @@ pub(crate) struct TurnSummary {
 #[derive(Default)]
 pub(crate) struct ThreadState {
     pub(crate) pending_interrupts: PendingInterruptQueue,
-    pub(crate) pending_rollbacks: Option<ConnectionRequestId>,
+    pub(crate) pending_history_mutation: Option<PendingThreadHistoryMutation>,
     pub(crate) turn_summary: TurnSummary,
     pub(crate) cancel_tx: Option<oneshot::Sender<()>>,
     pub(crate) experimental_raw_events: bool,

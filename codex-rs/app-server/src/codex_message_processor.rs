@@ -15,6 +15,8 @@ use crate::outgoing_message::OutgoingMessageSender;
 use crate::outgoing_message::OutgoingNotification;
 use crate::outgoing_message::RequestContext;
 use crate::outgoing_message::ThreadScopedOutgoingMessageSender;
+use crate::thread_state::PendingThreadHistoryMutation;
+use crate::thread_state::PendingThreadHistoryMutationKind;
 use crate::thread_status::ThreadWatchManager;
 use crate::thread_status::resolve_thread_status;
 use chrono::DateTime;
@@ -146,6 +148,7 @@ use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStartResponse;
 use codex_app_server_protocol::ThreadRealtimeStopParams;
 use codex_app_server_protocol::ThreadRealtimeStopResponse;
+use codex_app_server_protocol::ThreadRestoreParams;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadRollbackParams;
@@ -762,6 +765,14 @@ impl CodexMessageProcessor {
             ClientRequest::ThreadRollback { request_id, params } => {
                 self.thread_rollback(to_connection_request_id(request_id), params)
                     .await;
+            }
+            ClientRequest::ThreadRestore { request_id, params } => {
+                self.thread_restore(
+                    to_connection_request_id(request_id),
+                    params,
+                    PendingThreadHistoryMutationKind::Restore,
+                )
+                .await;
             }
             ClientRequest::ThreadList { request_id, params } => {
                 self.thread_list(to_connection_request_id(request_id), params)
@@ -3193,9 +3204,28 @@ impl CodexMessageProcessor {
         request_id: ConnectionRequestId,
         params: ThreadRollbackParams,
     ) {
-        let ThreadRollbackParams {
+        self.thread_restore(
+            request_id,
+            ThreadRestoreParams {
+                thread_id: params.thread_id,
+                num_turns: params.num_turns,
+                restore_files: false,
+            },
+            PendingThreadHistoryMutationKind::Rollback,
+        )
+        .await;
+    }
+
+    async fn thread_restore(
+        &mut self,
+        request_id: ConnectionRequestId,
+        params: ThreadRestoreParams,
+        mutation_kind: PendingThreadHistoryMutationKind,
+    ) {
+        let ThreadRestoreParams {
             thread_id,
             num_turns,
+            restore_files,
         } = params;
 
         if num_turns == 0 {
@@ -3214,20 +3244,23 @@ impl CodexMessageProcessor {
 
         let request = request_id.clone();
 
-        let rollback_already_in_progress = {
+        let restore_already_in_progress = {
             let thread_state = self.thread_state_manager.thread_state(thread_id).await;
             let mut thread_state = thread_state.lock().await;
-            if thread_state.pending_rollbacks.is_some() {
+            if thread_state.pending_history_mutation.is_some() {
                 true
             } else {
-                thread_state.pending_rollbacks = Some(request.clone());
+                thread_state.pending_history_mutation = Some(PendingThreadHistoryMutation {
+                    request_id: request.clone(),
+                    kind: mutation_kind,
+                });
                 false
             }
         };
-        if rollback_already_in_progress {
+        if restore_already_in_progress {
             self.send_invalid_request_error(
                 request.clone(),
-                "rollback already in progress for this thread".to_string(),
+                "thread history restore already in progress for this thread".to_string(),
             )
             .await;
             return;
@@ -3237,18 +3270,19 @@ impl CodexMessageProcessor {
             .submit_core_op(
                 &request_id,
                 thread.as_ref(),
-                Op::ThreadRollback { num_turns },
+                Op::RestoreTurn {
+                    num_turns,
+                    restore_files,
+                },
             )
             .await
         {
-            // No ThreadRollback event will arrive if an error occurs.
-            // Clean up and reply immediately.
             let thread_state = self.thread_state_manager.thread_state(thread_id).await;
             let mut thread_state = thread_state.lock().await;
-            thread_state.pending_rollbacks = None;
+            thread_state.pending_history_mutation = None;
             drop(thread_state);
 
-            self.send_internal_error(request, format!("failed to start rollback: {err}"))
+            self.send_internal_error(request, format!("failed to start restore: {err}"))
                 .await;
         }
     }

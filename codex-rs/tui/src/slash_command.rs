@@ -32,7 +32,8 @@ pub enum SlashCommand {
     Plan,
     Collab,
     Agent,
-    // Undo,
+    Restore,
+    Undo,
     Diff,
     Copy,
     Mention,
@@ -77,7 +78,8 @@ impl SlashCommand {
             SlashCommand::Resume => "resume a saved chat",
             SlashCommand::Clear => "clear the terminal and start a new chat",
             SlashCommand::Fork => "fork the current chat",
-            // SlashCommand::Undo => "ask Codex to undo a turn",
+            SlashCommand::Restore => "restore recent turns, with optional workspace file restore",
+            SlashCommand::Undo => "compatibility alias for restoring the latest turn and files",
             SlashCommand::Quit | SlashCommand::Exit => "exit Codex",
             SlashCommand::Diff => "show git diff (including untracked files)",
             SlashCommand::Copy => "copy the latest Codex output to your clipboard",
@@ -128,6 +130,7 @@ impl SlashCommand {
                 | SlashCommand::Rename
                 | SlashCommand::Plan
                 | SlashCommand::Fast
+                | SlashCommand::Restore
                 | SlashCommand::SandboxReadRoot
         )
     }
@@ -140,7 +143,8 @@ impl SlashCommand {
             | SlashCommand::Fork
             | SlashCommand::Init
             | SlashCommand::Compact
-            // | SlashCommand::Undo
+            | SlashCommand::Restore
+            | SlashCommand::Undo
             | SlashCommand::Model
             | SlashCommand::Provider
             | SlashCommand::Fast

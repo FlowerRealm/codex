@@ -4356,6 +4356,13 @@ async fn submission_loop(sess: Arc<Session>, config: Arc<Config>, rx_sub: Receiv
                     handlers::undo(&sess, sub.id.clone()).await;
                     false
                 }
+                Op::RestoreTurn {
+                    num_turns,
+                    restore_files,
+                } => {
+                    handlers::restore_turn(&sess, sub.id.clone(), num_turns, restore_files).await;
+                    false
+                }
                 Op::Compact => {
                     handlers::compact(&sess, sub.id.clone()).await;
                     false
@@ -4463,11 +4470,13 @@ mod handlers {
     use crate::rollout::RolloutRecorder;
     use crate::rollout::session_index;
     use crate::tasks::CompactTask;
-    use crate::tasks::UndoTask;
     use crate::tasks::UserShellCommandMode;
     use crate::tasks::UserShellCommandTask;
     use crate::tasks::execute_user_shell_command;
+    use codex_git::RestoreGhostCommitOptions;
+    use codex_git::restore_ghost_commit_with_options;
     use codex_protocol::custom_prompts::CustomPrompt;
+    use codex_protocol::models::ResponseItem;
     use codex_protocol::protocol::CodexErrorInfo;
     use codex_protocol::protocol::ErrorEvent;
     use codex_protocol::protocol::Event;
@@ -4488,6 +4497,8 @@ mod handlers {
     use codex_protocol::protocol::ThreadNameUpdatedEvent;
     use codex_protocol::protocol::ThreadRolledBackEvent;
     use codex_protocol::protocol::TurnAbortReason;
+    use codex_protocol::protocol::UndoCompletedEvent;
+    use codex_protocol::protocol::UndoStartedEvent;
     use codex_protocol::protocol::WarningEvent;
     use codex_protocol::request_permissions::RequestPermissionsResponse;
     use codex_protocol::request_user_input::RequestUserInputResponse;
@@ -4971,9 +4982,10 @@ mod handlers {
     }
 
     pub async fn undo(sess: &Arc<Session>, sub_id: String) {
-        let turn_context = sess.new_default_turn_with_sub_id(sub_id).await;
-        sess.spawn_task(turn_context, Vec::new(), UndoTask::new())
-            .await;
+        restore_turn(
+            sess, sub_id, /*num_turns*/ 1, /*restore_files*/ true,
+        )
+        .await;
     }
 
     pub async fn compact(sess: &Arc<Session>, sub_id: String) {
@@ -5052,6 +5064,15 @@ mod handlers {
     }
 
     pub async fn thread_rollback(sess: &Arc<Session>, sub_id: String, num_turns: u32) {
+        restore_turn(sess, sub_id, num_turns, /*restore_files*/ false).await;
+    }
+
+    pub async fn restore_turn(
+        sess: &Arc<Session>,
+        sub_id: String,
+        num_turns: u32,
+        restore_files: bool,
+    ) {
         if num_turns == 0 {
             sess.send_event_raw(Event {
                 id: sub_id,
@@ -5069,7 +5090,7 @@ mod handlers {
             sess.send_event_raw(Event {
                 id: sub_id,
                 msg: EventMsg::Error(ErrorEvent {
-                    message: "Cannot rollback while a turn is in progress.".to_string(),
+                    message: "Cannot restore while a turn is in progress.".to_string(),
                     codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
                 }),
             })
@@ -5087,7 +5108,7 @@ mod handlers {
                 sess.send_event_raw(Event {
                     id: turn_context.sub_id.clone(),
                     msg: EventMsg::Error(ErrorEvent {
-                        message: "thread rollback requires a persisted rollout path".to_string(),
+                        message: "thread restore requires a persisted rollout path".to_string(),
                         codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
                     }),
                 })
@@ -5105,7 +5126,7 @@ mod handlers {
                 id: turn_context.sub_id.clone(),
                 msg: EventMsg::Error(ErrorEvent {
                     message: format!(
-                        "failed to flush rollout `{}` for rollback replay: {err}",
+                        "failed to flush rollout `{}` for restore replay: {err}",
                         rollout_path.display()
                     ),
                     codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
@@ -5123,7 +5144,7 @@ mod handlers {
                         id: turn_context.sub_id.clone(),
                         msg: EventMsg::Error(ErrorEvent {
                             message: format!(
-                                "failed to load rollout `{}` for rollback replay: {err}",
+                                "failed to load rollout `{}` for restore replay: {err}",
                                 rollout_path.display()
                             ),
                             codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
@@ -5133,6 +5154,89 @@ mod handlers {
                     return;
                 }
             };
+
+        if restore_files {
+            let history = sess.clone_history().await;
+            let target_ghost_commit = history
+                .raw_items()
+                .iter()
+                .enumerate()
+                .filter_map(|(idx, item)| match item {
+                    ResponseItem::GhostSnapshot { ghost_commit } => Some((idx, ghost_commit)),
+                    _ => None,
+                })
+                .filter_map(|(idx, ghost_commit)| {
+                    let surviving_user_turns = history.raw_items()[..idx]
+                        .iter()
+                        .filter(|item| is_user_turn_boundary(item))
+                        .count();
+                    let total_user_turns = history
+                        .raw_items()
+                        .iter()
+                        .filter(|item| is_user_turn_boundary(item))
+                        .count();
+                    let removed_turns = total_user_turns.saturating_sub(surviving_user_turns);
+                    (removed_turns >= usize::try_from(num_turns).unwrap_or(usize::MAX))
+                        .then_some(ghost_commit.clone())
+                })
+                .next();
+
+            let Some(ghost_commit) = target_ghost_commit else {
+                sess.send_event_raw(Event {
+                    id: turn_context.sub_id.clone(),
+                    msg: EventMsg::Error(ErrorEvent {
+                        message: "No workspace snapshot is available for the requested restore."
+                            .to_string(),
+                        codex_error_info: Some(CodexErrorInfo::ThreadRollbackFailed),
+                    }),
+                })
+                .await;
+                return;
+            };
+
+            sess.send_event(
+                turn_context.as_ref(),
+                EventMsg::UndoStarted(UndoStartedEvent {
+                    message: Some(format!("Restoring last {num_turns} turn(s)...")),
+                }),
+            )
+            .await;
+
+            let repo_path = turn_context.cwd.clone();
+            let ghost_snapshot = turn_context.ghost_snapshot.clone();
+            let restore_result = tokio::task::spawn_blocking(move || {
+                let options =
+                    RestoreGhostCommitOptions::new(&repo_path).ghost_snapshot(ghost_snapshot);
+                restore_ghost_commit_with_options(&options, &ghost_commit)
+            })
+            .await;
+
+            match restore_result {
+                Ok(Ok(())) => {}
+                Ok(Err(err)) => {
+                    sess.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::UndoCompleted(UndoCompletedEvent {
+                            success: false,
+                            message: Some(format!("Failed to restore workspace files: {err}")),
+                        }),
+                    )
+                    .await;
+                    return;
+                }
+                Err(err) => {
+                    sess.send_event(
+                        turn_context.as_ref(),
+                        EventMsg::UndoCompleted(UndoCompletedEvent {
+                            success: false,
+                            message: Some(format!("Failed to restore workspace files: {err}")),
+                        }),
+                    )
+                    .await;
+                    return;
+                }
+            }
+        }
 
         let rollback_event = ThreadRolledBackEvent { num_turns };
         let rollback_msg = EventMsg::ThreadRolledBack(rollback_event.clone());
@@ -5153,6 +5257,19 @@ mod handlers {
             msg: rollback_msg,
         })
         .await;
+
+        if restore_files {
+            sess.send_event(
+                turn_context.as_ref(),
+                EventMsg::UndoCompleted(UndoCompletedEvent {
+                    success: true,
+                    message: Some(format!(
+                        "Restored last {num_turns} turn(s) and workspace files."
+                    )),
+                }),
+            )
+            .await;
+        }
     }
 
     /// Persists the thread name in the session index, updates in-memory state, and emits

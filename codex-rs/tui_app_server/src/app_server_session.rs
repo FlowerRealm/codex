@@ -36,6 +36,8 @@ use codex_app_server_protocol::ThreadRealtimeStartParams;
 use codex_app_server_protocol::ThreadRealtimeStartResponse;
 use codex_app_server_protocol::ThreadRealtimeStopParams;
 use codex_app_server_protocol::ThreadRealtimeStopResponse;
+use codex_app_server_protocol::ThreadRestoreParams;
+use codex_app_server_protocol::ThreadRestoreResponse;
 use codex_app_server_protocol::ThreadResumeParams;
 use codex_app_server_protocol::ThreadResumeResponse;
 use codex_app_server_protocol::ThreadRollbackParams;
@@ -526,6 +528,26 @@ impl AppServerSession {
             })
             .await
             .wrap_err("thread/rollback failed in app-server TUI")
+    }
+
+    pub(crate) async fn thread_restore(
+        &mut self,
+        thread_id: ThreadId,
+        num_turns: u32,
+        restore_files: bool,
+    ) -> Result<ThreadRestoreResponse> {
+        let request_id = self.next_request_id();
+        self.client
+            .request_typed(ClientRequest::ThreadRestore {
+                request_id,
+                params: ThreadRestoreParams {
+                    thread_id: thread_id.to_string(),
+                    num_turns,
+                    restore_files,
+                },
+            })
+            .await
+            .wrap_err("thread/restore failed in app-server TUI")
     }
 
     pub(crate) async fn review_start(

@@ -278,6 +278,10 @@ client_request_definitions! {
         params: v2::ThreadRollbackParams,
         response: v2::ThreadRollbackResponse,
     },
+    ThreadRestore => "thread/restore" {
+        params: v2::ThreadRestoreParams,
+        response: v2::ThreadRestoreResponse,
+    },
     ThreadList => "thread/list" {
         params: v2::ThreadListParams,
         response: v2::ThreadListResponse,

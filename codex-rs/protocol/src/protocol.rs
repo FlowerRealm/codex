@@ -467,7 +467,9 @@ pub enum Op {
     /// involve the model.
     SetThreadName { name: String },
 
-    /// Request Codex to undo a turn (turn are stacked so it is the same effect as CMD + Z).
+    /// Request Codex to restore the latest turn, including workspace files.
+    ///
+    /// This is kept as a compatibility alias for `RestoreTurn { num_turns: 1, restore_files: true }`.
     Undo,
 
     /// Request Codex to drop the last N user turns from in-memory context.
@@ -475,6 +477,13 @@ pub enum Op {
     /// This does not attempt to revert local filesystem changes. Clients are
     /// responsible for undoing any edits on disk.
     ThreadRollback { num_turns: u32 },
+
+    /// Request Codex to restore the last N user turns.
+    ///
+    /// When `restore_files` is true, Codex also restores the workspace files to
+    /// the snapshot captured for the earliest restored turn. When false, only
+    /// thread history is restored.
+    RestoreTurn { num_turns: u32, restore_files: bool },
 
     /// Request a code review from the agent.
     Review { review_request: ReviewRequest },
@@ -529,6 +538,7 @@ impl Op {
             Self::SetThreadName { .. } => "set_thread_name",
             Self::Undo => "undo",
             Self::ThreadRollback { .. } => "thread_rollback",
+            Self::RestoreTurn { .. } => "restore_turn",
             Self::Review { .. } => "review",
             Self::Shutdown => "shutdown",
             Self::RunUserShellCommand { .. } => "run_user_shell_command",

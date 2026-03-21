@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 
+use crate::app_backtrack::BacktrackSelection;
 use codex_chatgpt::connectors::AppInfo;
 use codex_file_search::FileMatch;
 use codex_protocol::ThreadId;
@@ -31,6 +32,12 @@ use codex_protocol::config_types::ServiceTier;
 use codex_protocol::openai_models::ReasoningEffort;
 use codex_protocol::protocol::AskForApproval;
 use codex_protocol::protocol::SandboxPolicy;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RestoreMode {
+    ChatOnly,
+    ChatAndFiles,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RealtimeAudioDeviceKind {
@@ -174,6 +181,12 @@ pub(crate) enum AppEvent {
     /// inserted history cells.
     ApplyThreadRollback {
         num_turns: u32,
+    },
+
+    SubmitRestore {
+        num_turns: u32,
+        restore_mode: RestoreMode,
+        selection: Option<BacktrackSelection>,
     },
 
     StartCommitAnimation,

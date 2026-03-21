@@ -1092,6 +1092,30 @@
             },
             "method": {
               "enum": [
+                "thread/restore"
+              ],
+              "title": "Thread/restoreRequestMethod",
+              "type": "string"
+            },
+            "params": {
+              "$ref": "#/definitions/ThreadRestoreParams"
+            }
+          },
+          "required": [
+            "id",
+            "method",
+            "params"
+          ],
+          "title": "Thread/restoreRequest",
+          "type": "object"
+        },
+        {
+          "properties": {
+            "id": {
+              "$ref": "#/definitions/RequestId"
+            },
+            "method": {
+              "enum": [
                 "thread/list"
               ],
               "title": "Thread/listRequestMethod",
@@ -10831,6 +10855,49 @@
         "threadId"
       ],
       "title": "ThreadRealtimeStartedNotification",
+      "type": "object"
+    },
+    "ThreadRestoreParams": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "numTurns": {
+          "description": "The number of turns to restore from the end of the thread. Must be >= 1.",
+          "format": "uint32",
+          "minimum": 0.0,
+          "type": "integer"
+        },
+        "restoreFiles": {
+          "description": "When true, restore workspace files to the snapshot captured for the earliest restored turn. When false, only thread history is restored.",
+          "type": "boolean"
+        },
+        "threadId": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "numTurns",
+        "restoreFiles",
+        "threadId"
+      ],
+      "title": "ThreadRestoreParams",
+      "type": "object"
+    },
+    "ThreadRestoreResponse": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "properties": {
+        "thread": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/Thread"
+            }
+          ],
+          "description": "The updated thread after applying the restore, with `turns` populated.\n\nThe ThreadItems stored in each Turn are lossy since we explicitly do not persist all agent interactions, such as command executions. This is the same behavior as `thread/resume`."
+        }
+      },
+      "required": [
+        "thread"
+      ],
+      "title": "ThreadRestoreResponse",
       "type": "object"
     },
     "ThreadResumeParams": {

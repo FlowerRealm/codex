@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "properties": {
+    "numTurns": {
+      "description": "The number of turns to restore from the end of the thread. Must be >= 1.",
+      "format": "uint32",
+      "minimum": 0.0,
+      "type": "integer"
+    },
+    "restoreFiles": {
+      "description": "When true, restore workspace files to the snapshot captured for the earliest restored turn. When false, only thread history is restored.",
+      "type": "boolean"
+    },
+    "threadId": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "numTurns",
+    "restoreFiles",
+    "threadId"
+  ],
+  "title": "ThreadRestoreParams",
+  "type": "object"
+}

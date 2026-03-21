@@ -283,6 +283,8 @@ export type { ThreadRealtimeErrorNotification } from "./ThreadRealtimeErrorNotif
 export type { ThreadRealtimeItemAddedNotification } from "./ThreadRealtimeItemAddedNotification";
 export type { ThreadRealtimeOutputAudioDeltaNotification } from "./ThreadRealtimeOutputAudioDeltaNotification";
 export type { ThreadRealtimeStartedNotification } from "./ThreadRealtimeStartedNotification";
+export type { ThreadRestoreParams } from "./ThreadRestoreParams";
+export type { ThreadRestoreResponse } from "./ThreadRestoreResponse";
 export type { ThreadResumeParams } from "./ThreadResumeParams";
 export type { ThreadResumeResponse } from "./ThreadResumeResponse";
 export type { ThreadRollbackParams } from "./ThreadRollbackParams";

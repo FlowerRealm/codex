@@ -3,6 +3,7 @@ use crate::app_event::AppEvent;
 use crate::app_event::ExitMode;
 use crate::app_event::ProviderApiKeyInput;
 use crate::app_event::RealtimeAudioDeviceKind;
+use crate::app_event::RestoreMode;
 #[cfg(target_os = "windows")]
 use crate::app_event::WindowsSandboxEnableMode;
 use crate::app_event_sender::AppEventSender;
@@ -2845,6 +2846,30 @@ impl App {
                     tui.frame_requester().schedule_frame();
                 }
             }
+            AppEvent::SubmitRestore {
+                num_turns,
+                restore_mode,
+                selection,
+            } => {
+                if let Some(selection) = selection {
+                    self.apply_backtrack_selection(tui, selection, restore_mode);
+                } else {
+                    let op = match restore_mode {
+                        RestoreMode::ChatOnly => Op::ThreadRollback { num_turns },
+                        RestoreMode::ChatAndFiles => Op::RestoreTurn {
+                            num_turns,
+                            restore_files: true,
+                        },
+                    };
+                    let replay_state_op = ThreadEventStore::op_can_change_pending_replay_state(&op)
+                        .then(|| op.clone());
+                    let submitted = self.chat_widget.submit_op(op);
+                    if submitted && let Some(op) = replay_state_op.as_ref() {
+                        self.note_active_thread_outbound_op(op).await;
+                        self.refresh_pending_thread_approvals().await;
+                    }
+                }
+            }
             AppEvent::StartCommitAnimation => {
                 if self
                     .commit_anim_running
@@ -4674,7 +4699,14 @@ impl App {
                 && self.chat_widget.composer_is_empty() =>
             {
                 if let Some(selection) = self.confirm_backtrack_from_main() {
-                    self.apply_backtrack_selection(tui, selection);
+                    let user_total = crate::app_backtrack::user_count(&self.transcript_cells);
+                    let num_turns =
+                        u32::try_from(user_total.saturating_sub(selection.nth_user_message))
+                            .unwrap_or(u32::MAX);
+                    if num_turns > 0 {
+                        self.chat_widget
+                            .open_restore_mode_picker(num_turns, Some(selection));
+                    }
                 }
             }
             KeyEvent {
@@ -7696,7 +7728,7 @@ guardian_approval = true
             vec!["https://example.com/backtrack.png".to_string()]
         );
 
-        app.apply_backtrack_rollback(selection);
+        app.apply_backtrack_rollback(selection, RestoreMode::ChatOnly);
         assert_eq!(
             app.chat_widget.remote_image_urls(),
             vec!["https://example.com/backtrack.png".to_string()]
@@ -7726,13 +7758,16 @@ guardian_approval = true
             .set_composer_text("stale draft".to_string(), Vec::new(), Vec::new());
 
         let remote_image_url = "https://example.com/remote-only.png".to_string();
-        app.apply_backtrack_rollback(BacktrackSelection {
-            nth_user_message: 0,
-            prefill: String::new(),
-            text_elements: Vec::new(),
-            local_image_paths: Vec::new(),
-            remote_image_urls: vec![remote_image_url.clone()],
-        });
+        app.apply_backtrack_rollback(
+            BacktrackSelection {
+                nth_user_message: 0,
+                prefill: String::new(),
+                text_elements: Vec::new(),
+                local_image_paths: Vec::new(),
+                remote_image_urls: vec![remote_image_url.clone()],
+            },
+            RestoreMode::ChatOnly,
+        );
 
         assert_eq!(app.chat_widget.composer_text_with_pending(), "");
         assert_eq!(app.chat_widget.remote_image_urls(), vec![remote_image_url]);
@@ -7781,13 +7816,16 @@ guardian_approval = true
             remote_image_urls: vec![data_image_url.clone()],
         }) as Arc<dyn HistoryCell>];
 
-        app.apply_backtrack_rollback(BacktrackSelection {
-            nth_user_message: 0,
-            prefill: "please inspect this".to_string(),
-            text_elements: Vec::new(),
-            local_image_paths: Vec::new(),
-            remote_image_urls: vec![data_image_url.clone()],
-        });
+        app.apply_backtrack_rollback(
+            BacktrackSelection {
+                nth_user_message: 0,
+                prefill: "please inspect this".to_string(),
+                text_elements: Vec::new(),
+                local_image_paths: Vec::new(),
+                remote_image_urls: vec![data_image_url.clone()],
+            },
+            RestoreMode::ChatOnly,
+        );
 
         app.chat_widget
             .handle_key_event(KeyEvent::new(KeyCode::Enter, KeyModifiers::NONE));

@@ -29,6 +29,7 @@ use std::sync::Arc;
 
 use crate::app::App;
 use crate::app_event::AppEvent;
+use crate::app_event::RestoreMode;
 use crate::history_cell::SessionInfoCell;
 use crate::history_cell::UserHistoryCell;
 use crate::pager_overlay::Overlay;
@@ -188,7 +189,11 @@ impl App {
     ///
     /// The composer prefill is applied immediately as a UX convenience; it does not imply that
     /// core has accepted the rollback.
-    pub(crate) fn apply_backtrack_rollback(&mut self, selection: BacktrackSelection) {
+    pub(crate) fn apply_backtrack_rollback(
+        &mut self,
+        selection: BacktrackSelection,
+        restore_mode: RestoreMode,
+    ) {
         let user_total = user_count(&self.transcript_cells);
         if user_total == 0 {
             return;
@@ -215,7 +220,13 @@ impl App {
             selection,
             thread_id: self.chat_widget.thread_id(),
         });
-        self.chat_widget.submit_op(Op::ThreadRollback { num_turns });
+        match restore_mode {
+            RestoreMode::ChatOnly => self.chat_widget.submit_op(Op::ThreadRollback { num_turns }),
+            RestoreMode::ChatAndFiles => self.chat_widget.submit_op(Op::RestoreTurn {
+                num_turns,
+                restore_files: true,
+            }),
+        };
         self.chat_widget.set_remote_image_urls(remote_image_urls);
         if !prefill.is_empty()
             || !text_elements.is_empty()
@@ -406,7 +417,13 @@ impl App {
         let selection = self.backtrack_selection(nth_user_message);
         self.close_transcript_overlay(tui);
         if let Some(selection) = selection {
-            self.apply_backtrack_rollback(selection);
+            let user_total = user_count(&self.transcript_cells);
+            let num_turns = u32::try_from(user_total.saturating_sub(selection.nth_user_message))
+                .unwrap_or(u32::MAX);
+            if num_turns > 0 {
+                self.chat_widget
+                    .open_restore_mode_picker(num_turns, Some(selection));
+            }
             tui.frame_requester().schedule_frame();
         }
     }
@@ -456,8 +473,9 @@ impl App {
         &mut self,
         tui: &mut tui::Tui,
         selection: BacktrackSelection,
+        restore_mode: RestoreMode,
     ) {
-        self.apply_backtrack_rollback(selection);
+        self.apply_backtrack_rollback(selection, restore_mode);
         tui.frame_requester().schedule_frame();
     }
 

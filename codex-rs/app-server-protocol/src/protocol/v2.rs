@@ -2920,6 +2920,30 @@ pub struct ThreadRollbackResponse {
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export_to = "v2/")]
+pub struct ThreadRestoreParams {
+    pub thread_id: String,
+    /// The number of turns to restore from the end of the thread. Must be >= 1.
+    pub num_turns: u32,
+    /// When true, restore workspace files to the snapshot captured for the
+    /// earliest restored turn. When false, only thread history is restored.
+    pub restore_files: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
+pub struct ThreadRestoreResponse {
+    /// The updated thread after applying the restore, with `turns` populated.
+    ///
+    /// The ThreadItems stored in each Turn are lossy since we explicitly do not
+    /// persist all agent interactions, such as command executions. This is the same
+    /// behavior as `thread/resume`.
+    pub thread: Thread,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, JsonSchema, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export_to = "v2/")]
 pub struct ThreadListParams {
     /// Opaque pagination cursor returned by a previous call.
     #[ts(optional = nullable)]
