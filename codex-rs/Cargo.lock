@@ -2404,6 +2404,7 @@ dependencies = [
  "clap",
  "codex-protocol",
  "codex-utils-home-dir",
+ "csv",
  "log",
  "owo-colors",
  "pretty_assertions",

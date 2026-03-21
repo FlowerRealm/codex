@@ -10,6 +10,7 @@ chrono = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 codex-protocol = { workspace = true }
 codex-utils-home-dir = { workspace = true }
+csv = { workspace = true }
 log = { workspace = true }
 owo-colors = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

@@ -221,7 +221,8 @@ use crate::mentions::collect_explicit_app_ids;
 use crate::mentions::collect_explicit_plugin_mentions;
 use crate::mentions::collect_tool_mentions_from_messages;
 use crate::network_policy_decision::execpolicy_network_rule_amendment;
-use crate::plan_csv::parse_plan_csv;
+use crate::plan_csv::canonical_plan_csv_from_proposed_plan;
+use crate::plan_csv::render_plan_text;
 use crate::plan_csv::update_plan_from_thread_plan_items;
 use crate::plugins::PluginsManager;
 use crate::plugins::build_plugin_injections;
@@ -2703,13 +2704,6 @@ impl Session {
         turn_context: &TurnContext,
         item: TurnItem,
     ) {
-        if let TurnItem::Plan(plan_item) = &item
-            && let Err(err) = self
-                .persist_active_thread_plan(turn_context, plan_item)
-                .await
-        {
-            warn!("failed to persist active thread plan: {err}");
-        }
         record_turn_ttfm_metric(turn_context, &item).await;
         self.send_event(
             turn_context,
@@ -2725,23 +2719,20 @@ impl Session {
     async fn persist_active_thread_plan(
         &self,
         turn_context: &TurnContext,
-        plan_item: &PlanItem,
+        source_item_id: &str,
+        raw_csv: &str,
     ) -> anyhow::Result<()> {
         let Some(state_db) = self.state_db() else {
             return Ok(());
         };
-        let rows = parse_plan_csv(plan_item.text.as_str())?;
         let active_plan = state_db
-            .replace_active_thread_plan(
-                &codex_state::ThreadPlanSnapshotCreateParams {
-                    id: Uuid::new_v4().to_string(),
-                    thread_id: self.conversation_id.to_string(),
-                    source_turn_id: turn_context.sub_id.clone(),
-                    source_item_id: plan_item.id.clone(),
-                    raw_markdown: plan_item.text.clone(),
-                },
-                rows.as_slice(),
-            )
+            .replace_active_thread_plan(&codex_state::ThreadPlanSnapshotCreateParams {
+                id: Uuid::new_v4().to_string(),
+                thread_id: self.conversation_id.to_string(),
+                source_turn_id: turn_context.sub_id.clone(),
+                source_item_id: source_item_id.to_string(),
+                raw_csv: raw_csv.to_string(),
+            })
             .await?;
         self.send_event(
             turn_context,
@@ -7056,7 +7047,7 @@ async fn maybe_complete_plan_item_from_message(
     turn_context: &TurnContext,
     state: &mut PlanModeStreamState,
     item: &ResponseItem,
-) {
+) -> Result<(), CodexErr> {
     if let ResponseItem::Message { role, content, .. } = item
         && role == "assistant"
     {
@@ -7068,15 +7059,33 @@ async fn maybe_complete_plan_item_from_message(
         }
         if let Some(plan_text) = extract_proposed_plan_text(&text) {
             let (plan_text, _citations) = strip_citations(&plan_text);
+            let canonical_plan = canonical_plan_csv_from_proposed_plan(plan_text.as_str())
+                .map_err(|err| {
+                    CodexErr::InvalidRequest(format!("invalid proposed plan CSV: {err}"))
+                })?;
             if !state.plan_item_state.started {
                 state.plan_item_state.start(sess, turn_context).await;
             }
+            sess.persist_active_thread_plan(
+                turn_context,
+                state.plan_item_state.item_id.as_str(),
+                canonical_plan.raw_csv.as_str(),
+            )
+            .await
+            .map_err(|err| {
+                CodexErr::Fatal(format!("failed to persist active thread plan: {err}"))
+            })?;
             state
                 .plan_item_state
-                .complete_with_text(sess, turn_context, plan_text)
+                .complete_with_text(
+                    sess,
+                    turn_context,
+                    render_plan_text(canonical_plan.rows.as_slice()),
+                )
                 .await;
         }
     }
+    Ok(())
 }
 
 /// Emit a completed agent message in plan mode, respecting deferred starts.
@@ -7150,11 +7159,11 @@ async fn handle_assistant_item_done_in_plan_mode(
     state: &mut PlanModeStreamState,
     previously_active_item: Option<&TurnItem>,
     last_agent_message: &mut Option<String>,
-) -> bool {
+) -> Result<bool, CodexErr> {
     if let ResponseItem::Message { role, .. } = item
         && role == "assistant"
     {
-        maybe_complete_plan_item_from_message(sess, turn_context, state, item).await;
+        maybe_complete_plan_item_from_message(sess, turn_context, state, item).await?;
 
         if let Some(turn_item) =
             handle_non_tool_response_item(sess, turn_context, item, /*plan_mode*/ true).await
@@ -7173,9 +7182,9 @@ async fn handle_assistant_item_done_in_plan_mode(
         if let Some(agent_message) = last_assistant_message_from_item(item, /*plan_mode*/ true) {
             *last_agent_message = Some(agent_message);
         }
-        return true;
+        return Ok(true);
     }
-    false
+    Ok(false)
 }
 
 async fn drain_in_flight(
@@ -7307,7 +7316,7 @@ async fn try_run_sampling_request(
                         previously_active_item.as_ref(),
                         &mut last_agent_message,
                     )
-                    .await
+                    .await?
                 {
                     continue;
                 }

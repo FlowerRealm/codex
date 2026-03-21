@@ -11885,7 +11885,7 @@
       },
       "ThreadActivePlan": {
         "properties": {
-          "rawMarkdown": {
+          "rawCsv": {
             "type": "string"
           },
           "rows": {
@@ -11905,7 +11905,7 @@
           }
         },
         "required": [
-          "rawMarkdown",
+          "rawCsv",
           "rows",
           "snapshotId",
           "sourceItemId",

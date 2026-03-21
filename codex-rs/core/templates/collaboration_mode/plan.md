@@ -106,26 +106,15 @@ When you present the official plan, wrap it in a `<proposed_plan>` block so the 
 Example:
 
 <proposed_plan>
-plan content
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Parse proposed-plan CSV,codex-rs/core/src/plan_csv.rs,extract fenced csv and validate headers,proposed plan markdown,validated plan rows,,rows parse with stable ids
+```
 </proposed_plan>
 
-plan content should be human and agent digestible. The final plan must be plan-only, concise by default, and include:
+The final `<proposed_plan>` block is **CSV-first**. Inside the block, output exactly one fenced `csv` block and nothing else that should be treated as authoritative plan content. Do not include summaries, titles, flowcharts, prose sections, or Markdown bullets inside `<proposed_plan>`.
 
-* A clear title
-* A brief summary section
-* A `Data Structure or Interface Changes` section covering important changes or additions to public APIs/interfaces/types
-* A `Flow Logic` section that explains the new end-to-end behavior after the change
-* Exactly one ASCII flowchart inside `Flow Logic`
-* Test cases and scenarios
-* Explicit assumptions and defaults chosen where needed
-
-The `Data Structure or Interface Changes` section should describe the concrete schema, type, API, or ownership changes that matter to implementation. If there are no meaningful external or structural changes, say that explicitly instead of omitting the section.
-
-The `Flow Logic` section must describe the main path in execution order, including where information is gathered, where data structures or interfaces change, where validation happens, and what the final output or externally visible result is. When the flow has meaningful branching or failure handling, include only the branches needed to avoid implementation mistakes.
-
-The ASCII flowchart must be part of the human-readable plan content and must appear before any fenced `csv` block. Use plain-text structures that render reliably in terminals, for example `[]`, `->`, `|`, and `?`. Do not use Mermaid or other diagram syntaxes as the default flowchart format.
-
-For implementation plans that should later feed todos/checklists, include exactly one fenced `csv` block inside `<proposed_plan>` after the human-readable plan content. That CSV is the machine-readable source of truth for reusable plan rows.
+The CSV is the only structured source of truth for the final plan. The system will generate any human-readable rendering from that CSV.
 
 The CSV must:
 
@@ -140,41 +129,6 @@ The CSV must:
 * include at most one `in_progress` row
 
 When a task spans multiple files, split it into multiple rows rather than stuffing multiple paths into one row. Prefer the smallest set of rows that keeps file ownership clear.
-
-Example:
-
-```csv
-id,status,step,path,details,inputs,outputs,depends_on,acceptance
-plan-01,in_progress,Parse proposed-plan CSV,codex-rs/core/src/plan_csv.rs,extract fenced csv and validate headers,proposed plan markdown,validated plan rows,,rows parse with stable ids
-plan-02,pending,Persist active plan rows,codex-rs/state/src/runtime/thread_plans.rs,replace active snapshot and item rows,validated plan rows,active plan rows,plan-01,rows reload from state
-```
-
-When possible, prefer a compact structure with 4-6 short sections, usually: Summary, Data Structure or Interface Changes, Flow Logic, Test Plan, and Assumptions. Do not include a separate Scope section unless scope boundaries are genuinely important to avoid mistakes.
-
-The `Flow Logic` section should usually contain:
-
-* A short paragraph or bullet list describing the new behavior in order
-* One ASCII flowchart, for example:
-
-```text
-[Collect facts]
-      |
-      v
-[Plan data structures]
-      |
-      v
-[Define flow logic]
-      |
-      v
-[Validate compatibility and tests]
-      |
-      v
-[Emit final output]
-```
-
-Prefer grouped implementation bullets by subsystem or behavior over file-by-file inventories. Mention files only when needed to disambiguate a non-obvious change, and avoid naming more than 3 paths unless extra specificity is necessary to prevent mistakes. Prefer behavior-level descriptions over symbol-by-symbol removal lists. For v1 feature-addition plans, do not invent detailed schema, validation, precedence, fallback, or wire-shape policy unless the request establishes it or it is needed to prevent a concrete implementation mistake; prefer the intended capability and minimum interface/behavior changes.
-
-Keep bullets short and avoid explanatory sub-bullets unless they are needed to prevent ambiguity. Prefer the minimum detail needed for implementation safety, not exhaustive coverage. Within each section, compress related changes into a few high-signal bullets and omit branch-by-branch logic, repeated invariants, and long lists of unaffected behavior unless they are necessary to prevent a likely implementation mistake. Avoid repeated repo facts and irrelevant edge-case or rollout detail. For straightforward refactors, keep the plan to a compact summary, key edits, tests, and assumptions. If the user asks for more detail, then expand.
 
 Do not ask "should I proceed?" in the final output. The user can easily switch out of Plan mode and request implementation if you have included a `<proposed_plan>` block in your response. Alternatively, they can decide to stay in Plan mode and continue refining the plan.
 

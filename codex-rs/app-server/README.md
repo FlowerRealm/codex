@@ -826,7 +826,7 @@ Today both notifications carry an empty `items` array even when item events were
 
 - `userMessage` — `{id, content}` where `content` is a list of user inputs (`text`, `image`, or `localImage`).
 - `agentMessage` — `{id, text}` containing the accumulated agent reply.
-- `plan` — `{id, text}` emitted for Plan turns; plan text can stream via `item/plan/delta` (experimental).
+- `plan` — `{id, text}` emitted for Plan turns; `text` is the final system-rendered plan derived from canonical CSV, while `item/plan/delta` remains an experimental preview stream.
 - `reasoning` — `{id, summary, content}` where `summary` holds streamed reasoning summaries (applicable for most OpenAI models) and `content` holds raw reasoning blocks (applicable for e.g. open source models).
 - `commandExecution` — `{id, command, cwd, status, commandActions, aggregatedOutput?, exitCode?, durationMs?}` for sandboxed commands; `status` is `inProgress`, `completed`, `failed`, or `declined`.
 - `fileChange` — `{id, changes, status}` describing proposed edits; `changes` list `{path, kind, diff}` and `status` is `inProgress`, `completed`, `failed`, or `declined`.
@@ -856,15 +856,15 @@ There are additional item-specific events:
 
 #### plan
 
-- `item/plan/delta` — streams proposed plan content for plan items (experimental); concatenate `delta` values for the same plan `itemId`. These deltas correspond to the `<proposed_plan>` block.
+- `item/plan/delta` — streams proposed plan content for plan items (experimental); concatenate `delta` values for the same plan `itemId`. These deltas are preview-only and may not match the final completed `plan.text`.
 
-When a proposed plan includes a machine-readable CSV block, the current structured header is:
+Plan mode treats the fenced CSV inside `<proposed_plan>` as the only structured source of truth. The required header is:
 
 ```text
 id,status,step,path,details,inputs,outputs,depends_on,acceptance
 ```
 
-`inputs`, `outputs`, and `depends_on` use `|`-delimited values inside a single CSV cell. Older 5-column CSV blocks (`id,status,step,path,details`) remain accepted for backward compatibility and default the newer fields to empty values.
+`inputs`, `outputs`, and `depends_on` use `|`-delimited values inside a single CSV cell. Older 5-column CSV blocks are no longer accepted.
 
 #### reasoning
 

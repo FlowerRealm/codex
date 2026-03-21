@@ -4209,7 +4209,7 @@ impl CodexMessageProcessor {
             snapshot_id: active_plan.snapshot.id,
             source_turn_id: active_plan.snapshot.source_turn_id,
             source_item_id: active_plan.snapshot.source_item_id,
-            raw_markdown: active_plan.snapshot.raw_markdown,
+            raw_csv: active_plan.snapshot.raw_csv,
             rows: active_plan
                 .items
                 .into_iter()

@@ -28,8 +28,6 @@ use codex_app_server_protocol::UserInput;
 use codex_protocol::user_input::ByteRange;
 use codex_protocol::user_input::TextElement;
 use codex_state::StateRuntime;
-use codex_state::ThreadPlanItemCreateParams;
-use codex_state::ThreadPlanItemStatus;
 use codex_state::ThreadPlanSnapshotCreateParams;
 use core_test_support::responses;
 use pretty_assertions::assert_eq;
@@ -178,27 +176,17 @@ async fn thread_read_returns_active_plan_from_state_db() -> Result<()> {
         StateRuntime::init(codex_home.path().to_path_buf(), "mock_provider".into()).await?;
     state_db.mark_backfill_complete(None).await?;
     let active_plan = state_db
-        .replace_active_thread_plan(
-            &ThreadPlanSnapshotCreateParams {
-                id: "snapshot-1".to_string(),
-                thread_id: conversation_id.clone(),
-                source_turn_id: "turn-1".to_string(),
-                source_item_id: "item-1".to_string(),
-                raw_markdown: "<proposed_plan>\n# Plan\n\n```csv\nid,status,step,path,details\nplan-01,in_progress,Parse CSV,codex-rs/core/src/plan_csv.rs,extract active rows\n```\n</proposed_plan>\n".to_string(),
-            },
-            &[ThreadPlanItemCreateParams {
-                row_id: "plan-01".to_string(),
-                row_index: 0,
-                status: ThreadPlanItemStatus::InProgress,
-                step: "Parse CSV".to_string(),
-                path: "codex-rs/core/src/plan_csv.rs".to_string(),
-                details: "extract active rows".to_string(),
-                inputs: vec!["proposed plan markdown".to_string()],
-                outputs: vec!["thread plan rows".to_string()],
-                depends_on: Vec::new(),
-                acceptance: Some("active plan rows reload".to_string()),
-            }],
-        )
+        .replace_active_thread_plan(&ThreadPlanSnapshotCreateParams {
+            id: "snapshot-1".to_string(),
+            thread_id: conversation_id.clone(),
+            source_turn_id: "turn-1".to_string(),
+            source_item_id: "item-1".to_string(),
+            raw_csv: "\
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Parse CSV,codex-rs/core/src/plan_csv.rs,extract active rows,proposed plan markdown,thread plan rows,,active plan rows reload
+"
+            .to_string(),
+        })
         .await?;
     assert_eq!(active_plan.items.len(), 1);
 
@@ -249,6 +237,12 @@ async fn thread_read_returns_active_plan_from_state_db() -> Result<()> {
     assert_eq!(
         active_plan_json.get("snapshotId").and_then(Value::as_str),
         Some("snapshot-1")
+    );
+    assert!(
+        active_plan_json
+            .get("rawCsv")
+            .and_then(Value::as_str)
+            .is_some_and(|raw_csv| raw_csv.starts_with("id,status,step,path,details"))
     );
     let rows_json = active_plan_json
         .get("rows")

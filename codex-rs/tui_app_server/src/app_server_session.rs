@@ -1356,7 +1356,7 @@ mod tests {
                 snapshot_id: "snapshot-1".to_string(),
                 source_turn_id: "turn-1".to_string(),
                 source_item_id: "plan-item-1".to_string(),
-                raw_markdown: "current".to_string(),
+                raw_csv: "current".to_string(),
                 rows: vec![codex_app_server_protocol::ThreadActivePlanRow {
                     id: "row-1".to_string(),
                     step: "Current plan".to_string(),

@@ -39,7 +39,14 @@ const DEFAULT_READ_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 async fn plan_mode_uses_proposed_plan_block_for_plan_item() -> Result<()> {
     skip_if_no_network!(Ok(()));
 
-    let plan_block = "<proposed_plan>\n# Final plan\n- first\n- second\n</proposed_plan>\n";
+    let plan_csv = "\
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,First step,codex-rs/core/src/codex.rs,first step,,,,
+plan-02,pending,Second step,codex-rs/core/src/plan_csv.rs,second step,,,plan-01,
+```
+";
+    let plan_block = format!("<proposed_plan>\n{plan_csv}</proposed_plan>\n");
     let full_message = format!("Preface\n{plan_block}Postscript");
     let responses = vec![responses::sse(vec![
         responses::ev_response_created("resp-1"),
@@ -66,14 +73,22 @@ async fn plan_mode_uses_proposed_plan_block_for_plan_item() -> Result<()> {
 
     let expected_plan = ThreadItem::Plan {
         id: format!("{}-plan", turn.id),
-        text: "# Final plan\n- first\n- second\n".to_string(),
+        text: "\
+# Plan
+
+- [in_progress] First step (`codex-rs/core/src/codex.rs`) - first step
+
+- [pending] Second step (`codex-rs/core/src/plan_csv.rs`) - second step
+  depends_on: plan-01
+"
+        .to_string(),
     };
     let expected_plan_id = format!("{}-plan", turn.id);
     let streamed_plan = plan_deltas
         .iter()
         .map(|delta| delta.delta.as_str())
         .collect::<String>();
-    assert_eq!(streamed_plan, "# Final plan\n- first\n- second\n");
+    assert_eq!(streamed_plan, plan_csv);
     assert!(
         plan_deltas
             .iter()
@@ -123,6 +138,72 @@ async fn plan_mode_without_proposed_plan_does_not_emit_plan_item() -> Result<()>
         .any(|item| matches!(item, ThreadItem::Plan { .. }));
     assert!(!has_plan_item);
     assert!(plan_deltas.is_empty());
+
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn plan_mode_rejects_legacy_plan_csv_block() -> Result<()> {
+    skip_if_no_network!(Ok(()));
+
+    let legacy_plan_csv = "\
+```csv
+id,status,step,path,details
+plan-01,in_progress,Legacy step,codex-rs/core/src/codex.rs,first step
+```
+";
+    let plan_block = format!("<proposed_plan>\n{legacy_plan_csv}</proposed_plan>\n");
+    let full_message = format!("Preface\n{plan_block}Postscript");
+    let responses = vec![responses::sse(vec![
+        responses::ev_response_created("resp-1"),
+        responses::ev_message_item_added("msg-1", ""),
+        responses::ev_output_text_delta(&full_message),
+        responses::ev_assistant_message("msg-1", &full_message),
+        responses::ev_completed("resp-1"),
+    ])];
+    let server = create_mock_responses_server_sequence_unchecked(responses).await;
+
+    let codex_home = TempDir::new()?;
+    create_config_toml(codex_home.path(), &server.uri())?;
+
+    let mut mcp = McpProcess::new(codex_home.path()).await?;
+    timeout(DEFAULT_READ_TIMEOUT, mcp.initialize()).await??;
+
+    let turn = start_plan_mode_turn(&mut mcp).await?;
+    let (_, completed_items, plan_deltas, turn_completed) =
+        collect_turn_notifications(&mut mcp).await?;
+    wait_for_responses_request_count(&server, 1).await?;
+
+    assert_eq!(turn_completed.turn.id, turn.id);
+    assert_eq!(turn_completed.turn.status, TurnStatus::Failed);
+    let error = turn_completed
+        .turn
+        .error
+        .expect("failed turn should include error details");
+    assert!(
+        error.message.contains("invalid proposed plan CSV"),
+        "unexpected error message: {}",
+        error.message
+    );
+    assert!(
+        error.message.contains(
+            "plan csv headers must be id,status,step,path,details,inputs,outputs,depends_on,acceptance"
+        ),
+        "unexpected error message: {}",
+        error.message
+    );
+
+    let streamed_plan = plan_deltas
+        .iter()
+        .map(|delta| delta.delta.as_str())
+        .collect::<String>();
+    assert_eq!(streamed_plan, legacy_plan_csv);
+    assert!(
+        completed_items
+            .iter()
+            .all(|item| !matches!(item, ThreadItem::Plan { .. })),
+        "legacy plan csv should not produce a completed plan item"
+    );
 
     Ok(())
 }

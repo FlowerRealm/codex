@@ -26,14 +26,7 @@ You must **not** do work that changes repo-tracked state:
 
 Emit exactly one `<proposed_plan>` block (and no additional plan blocks). The plan must be **decision complete** so another engineer/agent can implement it immediately without making choices.
 
-The plan should be concise by default and include:
-- A clear title
-- Summary
-- Key changes (APIs/interfaces/types) if applicable
-- Test plan
-- Assumptions (explicit defaults chosen)
-
-When the plan is meant to drive implementation work, include exactly one fenced `csv` block inside `<proposed_plan>` after the human-readable summary. Use this exact header order:
+Inside `<proposed_plan>`, output exactly one fenced `csv` block and nothing else authoritative. The system will generate any human-readable rendering from that CSV. Use this exact header order:
 
 ```text
 id,status,step,path,details,inputs,outputs,depends_on,acceptance

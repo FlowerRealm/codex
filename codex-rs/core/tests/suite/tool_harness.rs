@@ -11,7 +11,6 @@ use codex_protocol::protocol::EventMsg;
 use codex_protocol::protocol::Op;
 use codex_protocol::protocol::SandboxPolicy;
 use codex_protocol::user_input::UserInput;
-use codex_state::ThreadPlanItemCreateParams;
 use codex_state::ThreadPlanItemStatus;
 use codex_state::ThreadPlanSnapshotCreateParams;
 use core_test_support::assert_regex_match;
@@ -212,27 +211,17 @@ async fn update_plan_tool_keeps_non_id_rows_when_active_plan_exists() -> anyhow:
     } = builder.build(&server).await?;
 
     let db = codex.state_db().expect("state db");
-    db.replace_active_thread_plan(
-        &ThreadPlanSnapshotCreateParams {
-            id: "snapshot-1".to_string(),
-            thread_id: session_configured.session_id.to_string(),
-            source_turn_id: "turn-1".to_string(),
-            source_item_id: "item-1".to_string(),
-            raw_markdown: "plan".to_string(),
-        },
-        &[ThreadPlanItemCreateParams {
-            row_id: "plan-1".to_string(),
-            row_index: 0,
-            status: ThreadPlanItemStatus::Pending,
-            step: "Inspect workspace".to_string(),
-            path: "codex-rs/core/src/tools/handlers/plan.rs".to_string(),
-            details: "sync state".to_string(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            depends_on: Vec::new(),
-            acceptance: None,
-        }],
-    )
+    db.replace_active_thread_plan(&ThreadPlanSnapshotCreateParams {
+        id: "snapshot-1".to_string(),
+        thread_id: session_configured.session_id.to_string(),
+        source_turn_id: "turn-1".to_string(),
+        source_item_id: "item-1".to_string(),
+        raw_csv: "\
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-1,pending,Inspect workspace,codex-rs/core/src/tools/handlers/plan.rs,sync state,,,,
+"
+        .to_string(),
+    })
     .await?;
 
     let call_id = "plan-tool-mixed-rows";
@@ -336,27 +325,17 @@ async fn update_plan_tool_rejects_unknown_active_plan_ids() -> anyhow::Result<()
     } = builder.build(&server).await?;
 
     let db = codex.state_db().expect("state db");
-    db.replace_active_thread_plan(
-        &ThreadPlanSnapshotCreateParams {
-            id: "snapshot-1".to_string(),
-            thread_id: session_configured.session_id.to_string(),
-            source_turn_id: "turn-1".to_string(),
-            source_item_id: "item-1".to_string(),
-            raw_markdown: "plan".to_string(),
-        },
-        &[ThreadPlanItemCreateParams {
-            row_id: "plan-1".to_string(),
-            row_index: 0,
-            status: ThreadPlanItemStatus::Pending,
-            step: "Inspect workspace".to_string(),
-            path: "codex-rs/core/src/tools/handlers/plan.rs".to_string(),
-            details: "sync state".to_string(),
-            inputs: Vec::new(),
-            outputs: Vec::new(),
-            depends_on: Vec::new(),
-            acceptance: None,
-        }],
-    )
+    db.replace_active_thread_plan(&ThreadPlanSnapshotCreateParams {
+        id: "snapshot-1".to_string(),
+        thread_id: session_configured.session_id.to_string(),
+        source_turn_id: "turn-1".to_string(),
+        source_item_id: "item-1".to_string(),
+        raw_csv: "\
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-1,pending,Inspect workspace,codex-rs/core/src/tools/handlers/plan.rs,sync state,,,,
+"
+        .to_string(),
+    })
     .await?;
 
     let call_id = "plan-tool-unknown-id";

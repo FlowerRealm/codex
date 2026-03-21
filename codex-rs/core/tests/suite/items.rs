@@ -449,7 +449,14 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
         ..
     } = test_codex().build(&server).await?;
 
-    let plan_block = "<proposed_plan>\n- Step 1\n- Step 2\n</proposed_plan>\n";
+    let plan_csv = "\
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,
+plan-02,pending,Step 2,codex-rs/core/src/plan_csv.rs,second step,,,plan-01,
+```
+";
+    let plan_block = format!("<proposed_plan>\n{plan_csv}</proposed_plan>\n");
     let full_message = format!("Intro\n{plan_block}Outro");
     let stream = sse(vec![
         ev_response_created("resp-1"),
@@ -507,8 +514,18 @@ async fn plan_mode_emits_plan_item_from_proposed_plan_block() -> anyhow::Result<
         plan_delta.thread_id,
         session_configured.session_id.to_string()
     );
-    assert_eq!(plan_delta.delta, "- Step 1\n- Step 2\n");
-    assert_eq!(plan_completed.text, "- Step 1\n- Step 2\n");
+    assert_eq!(plan_delta.delta, plan_csv);
+    assert_eq!(
+        plan_completed.text,
+        "\
+# Plan
+
+- [in_progress] Step 1 (`codex-rs/core/src/codex.rs`) - first step
+
+- [pending] Step 2 (`codex-rs/core/src/plan_csv.rs`) - second step
+  depends_on: plan-01
+"
+    );
 
     Ok(())
 }
@@ -525,7 +542,14 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
         ..
     } = test_codex().build(&server).await?;
 
-    let plan_block = "<proposed_plan>\n- Step 1\n- Step 2\n</proposed_plan>\n";
+    let plan_csv = "\
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,
+plan-02,pending,Step 2,codex-rs/core/src/plan_csv.rs,second step,,,plan-01,
+```
+";
+    let plan_block = format!("<proposed_plan>\n{plan_csv}</proposed_plan>\n");
     let full_message = format!("Intro\n{plan_block}Outro");
     let stream = sse(vec![
         ev_response_created("resp-1"),
@@ -596,8 +620,18 @@ async fn plan_mode_strips_plan_from_agent_messages() -> anyhow::Result<()> {
 
     let agent_text = agent_deltas.concat();
     assert_eq!(agent_text, "Intro\nOutro");
-    assert_eq!(plan_delta.unwrap(), "- Step 1\n- Step 2\n");
-    assert_eq!(plan_item.unwrap().text, "- Step 1\n- Step 2\n");
+    assert_eq!(plan_delta.unwrap(), plan_csv);
+    assert_eq!(
+        plan_item.unwrap().text,
+        "\
+# Plan
+
+- [in_progress] Step 1 (`codex-rs/core/src/codex.rs`) - first step
+
+- [pending] Step 2 (`codex-rs/core/src/plan_csv.rs`) - second step
+  depends_on: plan-01
+"
+    );
     let agent_text_from_item: String = agent_item
         .unwrap()
         .content
@@ -627,8 +661,8 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
     let added_text = "Intro <oai-mem-";
     let deltas = [
         "citation>outer-doc</oai-mem-citation>\n<proposed",
-        "_plan>\n- Step 1<oai-mem-",
-        "citation>plan-doc</oai-mem-citation>\n- Step 2\n</proposed_plan>\nOu",
+        "_plan>\n```csv\nid,status,step,path,details,inputs,outputs,depends_on,acceptance\nplan-01,in_progress,Step 1<oai-mem-",
+        "citation>plan-doc</oai-mem-citation>,codex-rs/core/src/codex.rs,first step,,,,\n```\n</proposed_plan>\nOu",
         "tro",
     ];
     let full_message = format!("{added_text}{}", deltas.concat());
@@ -770,8 +804,23 @@ async fn plan_mode_streaming_citations_are_stripped_across_added_deltas_and_done
     assert_eq!(agent_started_text, "");
     assert_eq!(agent_delta_text, "Intro \nOutro");
     assert_eq!(agent_completed_text, "Intro \nOutro");
-    assert_eq!(plan_delta_text, "- Step 1\n- Step 2\n");
-    assert_eq!(plan_completed.text, "- Step 1\n- Step 2\n");
+    assert_eq!(
+        plan_delta_text,
+        "\
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,
+```
+"
+    );
+    assert_eq!(
+        plan_completed.text,
+        "\
+# Plan
+
+- [in_progress] Step 1 (`codex-rs/core/src/codex.rs`) - first step
+"
+    );
 
     for text in [
         agent_started_text.as_str(),
@@ -816,7 +865,9 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
     } = test_codex().build(&server).await?;
 
     let added_text = "Intro\n<proposed";
-    let deltas = ["_plan>\n- Step 1\n</proposed_plan>\nOutro"];
+    let deltas = [
+        "_plan>\n```csv\nid,status,step,path,details,inputs,outputs,depends_on,acceptance\nplan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,\n```\n</proposed_plan>\nOutro",
+    ];
     let full_message = format!("{added_text}{}", deltas.concat());
 
     let mut events = vec![
@@ -915,8 +966,23 @@ async fn plan_mode_streaming_proposed_plan_tag_split_across_added_and_delta_is_p
     assert_eq!(agent_deltas.concat(), "Intro\nOutro");
     assert_eq!(agent_completed_text, "Intro\nOutro");
     assert_eq!(plan_started.text, "");
-    assert_eq!(plan_deltas.concat(), "- Step 1\n");
-    assert_eq!(plan_completed.text, "- Step 1\n");
+    assert_eq!(
+        plan_deltas.concat(),
+        "\
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,
+```
+"
+    );
+    assert_eq!(
+        plan_completed.text,
+        "\
+# Plan
+
+- [in_progress] Step 1 (`codex-rs/core/src/codex.rs`) - first step
+"
+    );
 
     Ok(())
 }
@@ -933,7 +999,7 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
         ..
     } = test_codex().build(&server).await?;
 
-    let full_message = "Intro\n<proposed_plan>\n- Step 1\n";
+    let full_message = "Intro\n<proposed_plan>\n```csv\nid,status,step,path,details,inputs,outputs,depends_on,acceptance\nplan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,\n```\n";
     let stream = sse(vec![
         ev_response_created("resp-1"),
         ev_message_item_added("msg-1", ""),
@@ -997,8 +1063,23 @@ async fn plan_mode_handles_missing_plan_close_tag() -> anyhow::Result<()> {
         }
     }
 
-    assert_eq!(plan_delta.unwrap(), "- Step 1\n");
-    assert_eq!(plan_item.unwrap().text, "- Step 1\n");
+    assert_eq!(
+        plan_delta.unwrap(),
+        "\
+```csv
+id,status,step,path,details,inputs,outputs,depends_on,acceptance
+plan-01,in_progress,Step 1,codex-rs/core/src/codex.rs,first step,,,,
+```
+"
+    );
+    assert_eq!(
+        plan_item.unwrap().text,
+        "\
+# Plan
+
+- [in_progress] Step 1 (`codex-rs/core/src/codex.rs`) - first step
+"
+    );
     let agent_text_from_item: String = agent_item
         .unwrap()
         .content
