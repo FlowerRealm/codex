@@ -5,6 +5,7 @@ use std::path::Path;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
 
 use crate::AuthManager;
 use crate::CodexAuth;
@@ -763,6 +764,7 @@ pub(crate) struct Session {
     /// session.
     features: ManagedFeatures,
     pending_mcp_server_refresh_config: Mutex<Option<McpServerRefreshConfig>>,
+    tool_inventory_generation: AtomicU64,
     pub(crate) conversation: Arc<RealtimeConversationManager>,
     pub(crate) active_turn: Mutex<Option<ActiveTurn>>,
     pub(crate) guardian_review_session: GuardianReviewSessionManager,
@@ -1849,6 +1851,7 @@ impl Session {
             state: Mutex::new(state),
             features: config.features.clone(),
             pending_mcp_server_refresh_config: Mutex::new(None),
+            tool_inventory_generation: AtomicU64::new(0),
             conversation: Arc::new(RealtimeConversationManager::new()),
             active_turn: Mutex::new(None),
             guardian_review_session: GuardianReviewSessionManager::default(),
@@ -2089,6 +2092,16 @@ impl Session {
     pub(crate) async fn get_connector_selection(&self) -> HashSet<String> {
         let state = self.state.lock().await;
         state.get_connector_selection()
+    }
+
+    pub(crate) fn bump_tool_inventory_generation(&self) -> u64 {
+        self.tool_inventory_generation
+            .fetch_add(1, Ordering::Relaxed)
+            + 1
+    }
+
+    fn tool_inventory_generation(&self) -> u64 {
+        self.tool_inventory_generation.load(Ordering::Relaxed)
     }
 
     // Clears connector IDs that were accumulated for explicit selection.
@@ -4119,6 +4132,7 @@ impl Session {
 
         let mut manager = self.services.mcp_connection_manager.write().await;
         *manager = refreshed_manager;
+        self.bump_tool_inventory_generation();
     }
 
     async fn refresh_mcp_servers_if_requested(&self, turn_context: &TurnContext) {
@@ -6319,6 +6333,7 @@ fn codex_apps_connector_id(tool: &crate::mcp_connection_manager::ToolInfo) -> Op
 fn build_turn_tool_router_cache_key(
     input: &[ResponseItem],
     effective_enabled_connectors: &HashSet<String>,
+    tool_inventory_generation: u64,
 ) -> TurnToolRouterCacheKey {
     let mut effective_enabled_connectors = effective_enabled_connectors
         .iter()
@@ -6328,6 +6343,7 @@ fn build_turn_tool_router_cache_key(
     TurnToolRouterCacheKey {
         user_messages: collect_user_messages(input),
         effective_enabled_connectors,
+        tool_inventory_generation,
     }
 }
 
@@ -6590,8 +6606,12 @@ pub(crate) async fn built_tools(
 ) -> CodexResult<Arc<ToolRouter>> {
     let mut effective_explicitly_enabled_connectors = explicitly_enabled_connectors.clone();
     effective_explicitly_enabled_connectors.extend(sess.get_connector_selection().await);
-    let router_cache_key =
-        build_turn_tool_router_cache_key(input, &effective_explicitly_enabled_connectors);
+    let tool_inventory_generation = sess.tool_inventory_generation();
+    let router_cache_key = build_turn_tool_router_cache_key(
+        input,
+        &effective_explicitly_enabled_connectors,
+        tool_inventory_generation,
+    );
     if tool_cache
         .router_cache_key
         .as_ref()
@@ -6599,6 +6619,11 @@ pub(crate) async fn built_tools(
         && let Some(router) = tool_cache.router.as_ref()
     {
         return Ok(Arc::clone(router));
+    }
+
+    if tool_cache.inventory_generation != Some(tool_inventory_generation) {
+        tool_cache.inventory = None;
+        tool_cache.inventory_generation = Some(tool_inventory_generation);
     }
 
     if tool_cache.inventory.is_none() {
@@ -6696,11 +6721,13 @@ struct TurnToolInventory {
 struct TurnToolRouterCacheKey {
     user_messages: Vec<String>,
     effective_enabled_connectors: Vec<String>,
+    tool_inventory_generation: u64,
 }
 
 #[derive(Default)]
 pub(crate) struct TurnToolCache {
     inventory: Option<TurnToolInventory>,
+    inventory_generation: Option<u64>,
     router_cache_key: Option<TurnToolRouterCacheKey>,
     router: Option<Arc<ToolRouter>>,
 }

@@ -548,8 +548,8 @@ fn turn_tool_router_cache_key_ignores_assistant_only_growth() {
         assistant_message("I will do that."),
     ];
 
-    let initial_key = build_turn_tool_router_cache_key(&input, &enabled_connectors);
-    let follow_up_key = build_turn_tool_router_cache_key(&follow_up_input, &enabled_connectors);
+    let initial_key = build_turn_tool_router_cache_key(&input, &enabled_connectors, 0);
+    let follow_up_key = build_turn_tool_router_cache_key(&follow_up_input, &enabled_connectors, 0);
 
     assert_eq!(initial_key, follow_up_key);
 }
@@ -560,10 +560,57 @@ fn turn_tool_router_cache_key_normalizes_connector_order() {
     let first = HashSet::from(["calendar".to_string(), "mail".to_string()]);
     let second = HashSet::from(["mail".to_string(), "calendar".to_string()]);
 
-    let first_key = build_turn_tool_router_cache_key(&input, &first);
-    let second_key = build_turn_tool_router_cache_key(&input, &second);
+    let first_key = build_turn_tool_router_cache_key(&input, &first, 0);
+    let second_key = build_turn_tool_router_cache_key(&input, &second, 0);
 
     assert_eq!(first_key, second_key);
+}
+
+#[test]
+fn turn_tool_router_cache_key_includes_inventory_generation() {
+    let enabled_connectors = HashSet::from(["calendar".to_string()]);
+    let input = vec![user_message("use $calendar")];
+
+    let first_key = build_turn_tool_router_cache_key(&input, &enabled_connectors, 0);
+    let second_key = build_turn_tool_router_cache_key(&input, &enabled_connectors, 1);
+
+    assert_ne!(first_key, second_key);
+}
+
+#[tokio::test]
+async fn built_tools_invalidates_cached_inventory_when_generation_changes() {
+    let (session, turn_context) = make_session_and_context().await;
+    let mut tool_cache = TurnToolCache {
+        inventory: Some(TurnToolInventory {
+            has_mcp_servers: false,
+            mcp_tools: HashMap::from([(
+                "sample__old_tool".to_string(),
+                make_mcp_tool("sample", "old_tool", None, None),
+            )]),
+            available_connectors: None,
+            discoverable_tools: None,
+        }),
+        inventory_generation: Some(0),
+        router_cache_key: None,
+        router: None,
+    };
+
+    session.bump_tool_inventory_generation();
+
+    let router = built_tools(
+        &session,
+        &turn_context,
+        &[user_message("run the tool")],
+        &HashSet::new(),
+        Some(turn_context.turn_skills.outcome.as_ref()),
+        &mut tool_cache,
+        &CancellationToken::new(),
+    )
+    .await
+    .expect("build tool router");
+
+    assert!(tool_cache.inventory.is_some());
+    assert!(router.find_spec("mcp__sample__old_tool").is_none());
 }
 
 #[test]
@@ -2473,6 +2520,7 @@ pub(crate) async fn make_session_and_context() -> (Session, TurnContext) {
         state: Mutex::new(state),
         features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
+        tool_inventory_generation: AtomicU64::new(0),
         conversation: Arc::new(RealtimeConversationManager::new()),
         active_turn: Mutex::new(None),
         guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
@@ -3303,6 +3351,7 @@ pub(crate) async fn make_session_and_context_with_dynamic_tools_and_rx(
         state: Mutex::new(state),
         features: config.features.clone(),
         pending_mcp_server_refresh_config: Mutex::new(None),
+        tool_inventory_generation: AtomicU64::new(0),
         conversation: Arc::new(RealtimeConversationManager::new()),
         active_turn: Mutex::new(None),
         guardian_review_session: crate::guardian::GuardianReviewSessionManager::default(),
