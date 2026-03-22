@@ -13,6 +13,7 @@ use crate::bottom_pane::SelectionViewParams;
 use crate::bottom_pane::custom_prompt_view::CustomPromptView;
 use crate::bottom_pane::popup_consts::standard_popup_hint_line;
 use crate::key_hint;
+use crate::provider_flow::ProviderDetailRuntimeState;
 use crate::provider_flow::ProviderDraft;
 use crate::provider_flow::ProviderField;
 use crate::provider_flow::ProviderFlowData;
@@ -44,13 +45,19 @@ pub(crate) fn build_provider_view_params(
             normalized_scope,
             config.active_profile.as_deref(),
         ),
-        ProviderScreen::Detail { provider_id } => build_provider_detail_view_params(
-            &data,
-            source,
-            normalized_scope,
-            provider_id,
-            config.active_profile.as_deref(),
-        ),
+        ProviderScreen::Detail { provider_id } => {
+            let runtime_state = data.row(provider_id).map(|row| {
+                ProviderDetailRuntimeState::from_config(config, provider_id, &row.provider)
+            });
+            build_provider_detail_view_params(
+                &data,
+                runtime_state,
+                source,
+                normalized_scope,
+                provider_id,
+                config.active_profile.as_deref(),
+            )
+        }
         ProviderScreen::Create => build_provider_create_view_params(
             &data,
             source,
@@ -139,11 +146,6 @@ pub(crate) fn build_provider_field_editor(
     field: ProviderField,
     app_event_tx: AppEventSender,
 ) -> Result<CustomPromptView> {
-    let mut data = ProviderFlowData::from_config(
-        config,
-        location.scope.normalized(config.active_profile.as_deref()),
-    );
-    data.create_draft = create_draft.clone();
     let title = match &provider_id {
         Some(provider_id) => format!("Edit {} for {provider_id}", field.label()),
         None => format!("Set {}", field.label()),
@@ -153,7 +155,8 @@ pub(crate) fn build_provider_field_editor(
         &provider_id,
         config.active_profile.as_deref(),
     ));
-    let initial_text = provider_field_initial_text(&data, provider_id.as_deref(), field);
+    let initial_text =
+        provider_field_initial_text(config, create_draft, provider_id.as_deref(), field);
     let submit_tx = app_event_tx;
 
     Ok(CustomPromptView::new(
@@ -239,6 +242,7 @@ fn build_provider_root_view_params(
 
 fn build_provider_detail_view_params(
     data: &ProviderFlowData,
+    runtime_state: Option<ProviderDetailRuntimeState>,
     source: ProviderFlowSource,
     scope: SettingsScope,
     provider_id: &str,
@@ -265,6 +269,7 @@ fn build_provider_detail_view_params(
             ..Default::default()
         };
     };
+    let runtime_state = runtime_state.unwrap_or_default();
 
     let location = ProviderFlowLocation {
         source,
@@ -281,14 +286,34 @@ fn build_provider_detail_view_params(
         active_profile,
     )];
     items.push(default_provider_action_item(row, source, scope));
-    items.push(provider_field_item(row, &location, ProviderField::Id));
-    items.push(provider_field_item(row, &location, ProviderField::Name));
-    items.push(provider_field_item(row, &location, ProviderField::BaseUrl));
-    items.push(provider_field_item(row, &location, ProviderField::ApiKey));
+    items.push(provider_field_item(
+        row,
+        &location,
+        ProviderField::Id,
+        runtime_state.has_secure_api_key,
+    ));
+    items.push(provider_field_item(
+        row,
+        &location,
+        ProviderField::Name,
+        runtime_state.has_secure_api_key,
+    ));
+    items.push(provider_field_item(
+        row,
+        &location,
+        ProviderField::BaseUrl,
+        runtime_state.has_secure_api_key,
+    ));
+    items.push(provider_field_item(
+        row,
+        &location,
+        ProviderField::ApiKey,
+        runtime_state.has_secure_api_key,
+    ));
     items.push(provider_usage_item(
         row,
         &location,
-        data.can_edit_usage_scripts,
+        runtime_state.can_edit_usage_scripts,
     ));
     items.push(provider_delete_item(row, source, scope));
 
@@ -508,16 +533,17 @@ fn provider_field_item(
     row: &ProviderFlowRow,
     location: &ProviderFlowLocation,
     field: ProviderField,
+    has_secure_api_key: bool,
 ) -> SelectionItem {
     let provider_id = row.id.clone();
     let search_provider_id = provider_id.clone();
-    let (description, disabled_reason) = provider_field_description(row, field);
+    let (description, disabled_reason) = provider_field_description(row, field, has_secure_api_key);
     let is_disabled = disabled_reason.is_some();
     let location = location.clone();
     SelectionItem {
         name: field.label().to_string(),
         description: Some(description),
-        selected_description: selected_provider_field_description(row, field),
+        selected_description: selected_provider_field_description(field, has_secure_api_key),
         is_disabled,
         disabled_reason,
         actions: vec![Box::new(move |tx| {
@@ -698,6 +724,7 @@ fn provider_detail_summary(row: &ProviderFlowRow) -> String {
 fn provider_field_description(
     row: &ProviderFlowRow,
     field: ProviderField,
+    has_secure_api_key: bool,
 ) -> (String, Option<String>) {
     match field {
         ProviderField::Id => {
@@ -720,7 +747,7 @@ fn provider_field_description(
                 .then_some("Built-in providers cannot be edited. Create a custom provider instead.".to_string()),
         ),
         ProviderField::ApiKey => (
-            if row.has_secure_api_key {
+            if has_secure_api_key {
                 "A secure API key is already stored for this provider.".to_string()
             } else {
                 "No secure API key is stored for this provider.".to_string()
@@ -732,8 +759,8 @@ fn provider_field_description(
 }
 
 fn selected_provider_field_description(
-    row: &ProviderFlowRow,
     field: ProviderField,
+    has_secure_api_key: bool,
 ) -> Option<String> {
     Some(match field {
         ProviderField::Id => {
@@ -745,7 +772,7 @@ fn selected_provider_field_description(
         ProviderField::ApiKey => {
             let mut text =
                 "Leave the field blank to keep the existing secure value. Type CLEAR to remove it.".to_string();
-            if row.has_secure_api_key {
+            if has_secure_api_key {
                 text.push_str(" A secure key is already present.");
             }
             text
@@ -786,21 +813,29 @@ fn create_field_selected_description(field: ProviderField) -> String {
 }
 
 fn provider_field_initial_text(
-    data: &ProviderFlowData,
+    config: &Config,
+    create_draft: &ProviderDraft,
     provider_id: Option<&str>,
     field: ProviderField,
 ) -> String {
     match provider_id {
-        Some(provider_id) => data
-            .row(provider_id)
-            .map(|row| match field {
-                ProviderField::Id => row.id.clone(),
-                ProviderField::Name => row.provider.name.clone(),
-                ProviderField::BaseUrl => row.provider.base_url.clone().unwrap_or_default(),
+        Some(provider_id) => config
+            .model_providers
+            .get(provider_id)
+            .map(|provider| match field {
+                ProviderField::Id => provider_id.to_string(),
+                ProviderField::Name => provider.name.clone(),
+                ProviderField::BaseUrl => provider.base_url.clone().unwrap_or_default(),
                 ProviderField::ApiKey => String::new(),
             })
-            .unwrap_or_default(),
-        None => data.create_field_value(field).to_string(),
+            .unwrap_or_else(|| {
+                if field == ProviderField::Id {
+                    provider_id.to_string()
+                } else {
+                    String::new()
+                }
+            }),
+        None => create_draft.field_value(field).to_string(),
     }
 }
 
@@ -838,9 +873,11 @@ fn provider_editor_context_label(
 mod tests {
     use super::build_provider_scope_picker_params;
     use super::build_provider_view_params;
+    use super::provider_field_initial_text;
     use crate::app_event::AppEvent;
     use crate::app_event_sender::AppEventSender;
     use crate::provider_flow::ProviderDraft;
+    use crate::provider_flow::ProviderField;
     use crate::provider_flow::ProviderFlowSource;
     use crate::provider_flow::ProviderScreen;
     use crate::settings::data::SettingsScope;
@@ -1025,6 +1062,85 @@ model_provider = "acme"
         assert_snapshot!(
             "provider_detail_profile",
             provider_view_focus_summary(&params)
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_detail_marks_present_api_key() {
+        let mut config = provider_test_config(Some("dev")).await;
+        config
+            .model_providers
+            .get_mut("acme")
+            .expect("acme provider should exist")
+            .api_key = Some("secret-inline".to_string());
+        let params = build_provider_view_params(
+            &config,
+            &ProviderDraft::new(),
+            ProviderFlowSource::SettingsModel,
+            SettingsScope::ActiveProfile,
+            &ProviderScreen::Detail {
+                provider_id: "acme".to_string(),
+            },
+        );
+        let item = params
+            .items
+            .iter()
+            .find(|item| item.name == "API key")
+            .expect("API key item should exist");
+
+        assert_eq!(
+            item.description.as_deref(),
+            Some("A secure API key is already stored for this provider.")
+        );
+        assert_eq!(
+            item.selected_description.as_deref(),
+            Some(
+                "Leave the field blank to keep the existing secure value. Type CLEAR to remove it. A secure key is already present."
+            )
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_field_initial_text_prefills_existing_provider_values() {
+        let config = provider_test_config(Some("dev")).await;
+
+        assert_eq!(
+            provider_field_initial_text(
+                &config,
+                &ProviderDraft::new(),
+                Some("acme"),
+                ProviderField::Name,
+            ),
+            "Acme"
+        );
+        assert_eq!(
+            provider_field_initial_text(
+                &config,
+                &ProviderDraft::new(),
+                Some("acme"),
+                ProviderField::BaseUrl,
+            ),
+            "https://acme.example/v1"
+        );
+    }
+
+    #[tokio::test]
+    async fn provider_field_initial_text_uses_create_draft() {
+        let mut draft = ProviderDraft::new();
+        draft.update_field(ProviderField::Name, "Draft provider".to_string());
+        draft.update_field(
+            ProviderField::BaseUrl,
+            "https://draft.example/v1".to_string(),
+        );
+        let config = provider_test_config(Some("dev")).await;
+
+        assert_eq!(
+            provider_field_initial_text(&config, &draft, None, ProviderField::Name),
+            "Draft provider"
+        );
+        assert_eq!(
+            provider_field_initial_text(&config, &draft, None, ProviderField::BaseUrl),
+            "https://draft.example/v1"
         );
     }
 

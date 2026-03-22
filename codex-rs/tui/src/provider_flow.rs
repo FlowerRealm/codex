@@ -114,14 +114,36 @@ pub(crate) struct ProviderFlowRow {
     pub(crate) provider: ModelProviderInfo,
     pub(crate) is_builtin: bool,
     pub(crate) is_default: bool,
-    pub(crate) has_secure_api_key: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct ProviderFlowData {
     pub(crate) rows: Vec<ProviderFlowRow>,
     pub(crate) create_draft: ProviderDraft,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub(crate) struct ProviderDetailRuntimeState {
+    pub(crate) has_secure_api_key: bool,
     pub(crate) can_edit_usage_scripts: bool,
+}
+
+impl ProviderDetailRuntimeState {
+    pub(crate) fn from_config(
+        config: &Config,
+        provider_id: &str,
+        provider: &ModelProviderInfo,
+    ) -> Self {
+        let has_secure_api_key = read_provider_api_key(&config.codex_home, provider_id)
+            .ok()
+            .flatten()
+            .is_some()
+            || provider.inline_api_key().is_some();
+        Self {
+            has_secure_api_key,
+            can_edit_usage_scripts: crate::provider_usage::can_edit_provider_usage_scripts(config),
+        }
+    }
 }
 
 impl ProviderFlowData {
@@ -135,19 +157,11 @@ impl ProviderFlowData {
         let mut rows: Vec<ProviderFlowRow> = config
             .model_providers
             .iter()
-            .map(|(id, provider)| {
-                let has_secure_api_key = read_provider_api_key(&config.codex_home, id)
-                    .ok()
-                    .flatten()
-                    .is_some()
-                    || provider.inline_api_key().is_some();
-                ProviderFlowRow {
-                    id: id.clone(),
-                    provider: provider.clone(),
-                    is_builtin: builtin_ids.contains(id),
-                    is_default: id == &default_provider_id,
-                    has_secure_api_key,
-                }
+            .map(|(id, provider)| ProviderFlowRow {
+                id: id.clone(),
+                provider: provider.clone(),
+                is_builtin: builtin_ids.contains(id),
+                is_default: id == &default_provider_id,
             })
             .collect();
         rows.sort_by(|left, right| left.id.cmp(&right.id));
@@ -155,7 +169,6 @@ impl ProviderFlowData {
         Self {
             rows,
             create_draft: ProviderDraft::new(),
-            can_edit_usage_scripts: crate::provider_usage::can_edit_provider_usage_scripts(config),
         }
     }
 
