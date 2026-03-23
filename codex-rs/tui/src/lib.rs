@@ -784,14 +784,13 @@ async fn run_ratatui_app(
                 None => return missing_session_exit(id_str, "fork"),
             }
         } else if cli.fork_last {
-            let provider_filter = vec![config.model_provider_id.clone()];
             match RolloutRecorder::list_threads(
                 &config,
                 /*page_size*/ 1,
                 /*cursor*/ None,
                 ThreadSortKey::UpdatedAt,
                 INTERACTIVE_SESSION_SOURCES,
-                Some(provider_filter.as_slice()),
+                None,
                 &config.model_provider_id,
                 /*search_term*/ None,
             )
@@ -879,7 +878,6 @@ async fn run_ratatui_app(
             None => return missing_session_exit(id_str, "resume"),
         }
     } else if cli.resume_last {
-        let provider_filter = vec![config.model_provider_id.clone()];
         let filter_cwd = if cli.resume_show_all {
             None
         } else {
@@ -891,7 +889,7 @@ async fn run_ratatui_app(
             /*cursor*/ None,
             ThreadSortKey::UpdatedAt,
             INTERACTIVE_SESSION_SOURCES,
-            Some(provider_filter.as_slice()),
+            None,
             &config.model_provider_id,
             filter_cwd,
         )
